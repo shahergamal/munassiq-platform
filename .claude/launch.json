@@ -1,0 +1,36 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/api",
+        "run",
+        "dev"
+      ],
+      "port": 4000
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "apps/web",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "api-load",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--env-file=apps/api/.env",
+        "apps/api/src/scripts/serve-load.ts"
+      ],
+      "port": 4100
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+e2e/.auth.json
+e2e/.state.json
+test-results/
+playwright-report/

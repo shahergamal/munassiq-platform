@@ -1,0 +1,9 @@
+node_modules
+.env
+dist
+*.log
+.DS_Store
+.localdb/data
+
+# Local demo accounts (seed-factory.ts)
+.demo-accounts.local

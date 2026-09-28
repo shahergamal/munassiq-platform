@@ -1,0 +1,42 @@
+{
+  "name": "@munassiq/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node --watch --env-file=.env src/server.ts",
+    "start": "node src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "test:integration": "node --env-file=.env --test test/integration/*.test.ts",
+    "db:migrate": "node --env-file=.env src/db/migrate.ts",
+    "admin:create": "node --env-file=.env src/scripts/create-admin.ts",
+    "demo:seed": "node src/scripts/seed-demo.ts",
+    "gen:permissions": "node src/scripts/gen-web-permissions.ts",
+    "demo:factory": "node --env-file=.env src/scripts/seed-factory.ts",
+    "zatca:sdk-validate": "node src/scripts/zatca-sdk-validate.ts",
+    "zatca:live-check": "node src/scripts/zatca-live-check.ts",
+    "load:test": "node src/scripts/load-test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/helmet": "^13.0.0",
+    "@fastify/multipart": "^9.0.0",
+    "@fastify/rate-limit": "^10.0.0",
+    "exceljs": "^4.4.0",
+    "fastify": "^5.0.0",
+    "nodemailer": "^10.0.12",
+    "pg": "^8.13.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.8.0"
+  }
+}

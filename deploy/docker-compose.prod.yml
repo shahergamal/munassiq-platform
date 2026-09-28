@@ -1,0 +1,53 @@
+# Production: database + API + web. Made for Coolify (or any Docker host): set the variables below in the
+# platform's "Environment Variables" screen; the platform gives the web service its domain and HTTPS.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: munassiq_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: munassiq
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
+      SYSTEM_DB_PASSWORD: ${SYSTEM_DB_PASSWORD:?}
+    volumes:
+      - munassiq_pg:/var/lib/postgresql/data
+      - ../db/bootstrap-roles.sh:/docker-entrypoint-initdb.d/00-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munassiq_owner -d munassiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: { context: .., dockerfile: deploy/api.Dockerfile }
+    restart: unless-stopped
+    depends_on: { db: { condition: service_healthy } }
+    environment:
+      DATABASE_URL: postgres://munassiq_app:${APP_DB_PASSWORD}@db:5432/munassiq
+      SYSTEM_DATABASE_URL: postgres://munassiq_system:${SYSTEM_DB_PASSWORD}@db:5432/munassiq
+      MIGRATE_DATABASE_URL: postgres://munassiq_owner:${POSTGRES_PASSWORD}@db:5432/munassiq
+      SESSION_SECRET: ${SESSION_SECRET:?}
+      APP_URL: ${APP_URL:?}
+      COOKIE_SECURE: "true"
+      SMTP_URL: ${SMTP_URL:?}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@example.com}
+      ZATCA_KEY_SECRET: ${ZATCA_KEY_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PLATFORM_MOYASAR_SECRET_KEY: ${PLATFORM_MOYASAR_SECRET_KEY:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+      DEPLOY_HOOK_URL: ${DEPLOY_HOOK_URL:-}
+      DEPLOY_HOOK_TOKEN: ${DEPLOY_HOOK_TOKEN:-}
+      # Docker starts the API again after "restart" (restart: unless-stopped).
+      SERVER_RESTART_ENABLED: "true"
+      SOURCE_COMMIT: ${SOURCE_COMMIT:-}
+
+  web:
+    build: { context: .., dockerfile: deploy/web.Dockerfile }
+    restart: unless-stopped
+    depends_on: [api]
+    expose: ["80"]
+
+volumes:
+  munassiq_pg:

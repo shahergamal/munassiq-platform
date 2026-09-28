@@ -1,0 +1,116 @@
+# Every push and pull request: the API (typecheck, unit tests, migrations on a fresh PostgreSQL 16, integration
+# tests with RLS and the two runtime roles exactly as in production) and the web app (typecheck, tests, build).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: munassiq_owner
+          POSTGRES_PASSWORD: change-me-owner
+          POSTGRES_DB: munassiq
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U munassiq_owner -d munassiq" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPASSWORD: change-me-owner
+      POSTGRES_USER: munassiq_owner
+      POSTGRES_DB: munassiq
+      APP_DB_PASSWORD: change-me-app
+      SYSTEM_DB_PASSWORD: change-me-system
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - name: Runtime roles (munassiq_app with RLS, munassiq_system)
+        run: bash ../../db/bootstrap-roles.sh
+      - name: Environment
+        run: cp .env.example .env
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run db:migrate
+      - run: npm run test:integration
+      - name: Dependency audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    needs: [api, web]
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: munassiq_owner
+          POSTGRES_PASSWORD: change-me-owner
+          POSTGRES_DB: munassiq
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U munassiq_owner -d munassiq" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      CI: "1"
+      # The whole suite runs from one IP: the per-IP limit would throttle it (production keeps its own value).
+      RATE_LIMIT_PER_MINUTE: "100000"
+      PGHOST: localhost
+      PGPASSWORD: change-me-owner
+      POSTGRES_USER: munassiq_owner
+      POSTGRES_DB: munassiq
+      APP_DB_PASSWORD: change-me-app
+      SYSTEM_DB_PASSWORD: change-me-system
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+      - name: API
+        working-directory: apps/api
+        run: |
+          npm ci
+          bash ../../db/bootstrap-roles.sh
+          cp .env.example .env
+          npm run db:migrate
+      - name: Web and browser
+        working-directory: apps/web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: End-to-end (starts both servers)
+        working-directory: apps/web
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report

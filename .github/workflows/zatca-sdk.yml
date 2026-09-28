@@ -1,0 +1,50 @@
+# Validates the e-invoices we generate with ZATCA's official SDK (fatoora CLI), for every document kind and flag
+# we issue (apps/api/src/scripts/zatca-sdk-validate.ts). ZATCA publishes the SDK as a zip on its developer portal;
+# set the repository variable ZATCA_SDK_URL to that download link (it changes with each SDK release).
+name: zatca-sdk
+
+on:
+  push:
+    paths: ["apps/api/src/lib/zatca/**", "apps/api/src/scripts/zatca-sdk-validate.ts", ".github/workflows/zatca-sdk.yml"]
+  pull_request:
+    paths: ["apps/api/src/lib/zatca/**", "apps/api/src/scripts/zatca-sdk-validate.ts", ".github/workflows/zatca-sdk.yml"]
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.18"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+      - name: Download ZATCA SDK
+        env:
+          ZATCA_SDK_URL: ${{ vars.ZATCA_SDK_URL }}
+        run: |
+          test -n "$ZATCA_SDK_URL" || { echo "Set the repository variable ZATCA_SDK_URL"; exit 1; }
+          curl -fsSL "$ZATCA_SDK_URL" -o sdk.zip
+          unzip -q sdk.zip -d sdk
+          SDK_HOME="$(dirname "$(find "$PWD/sdk" -type d -name Apps | head -n 1)")"
+          echo "ZATCA_SDK_HOME=$SDK_HOME" >> "$GITHUB_ENV"
+      - name: Install SDK
+        working-directory: ${{ env.ZATCA_SDK_HOME }}
+        run: |
+          chmod +x install.sh Apps/fatoora || true
+          ./install.sh
+      - run: npm ci
+        working-directory: apps/api
+      - name: Validate generated documents
+        working-directory: apps/api
+        run: |
+          source ~/.bash_profile 2>/dev/null || true
+          npm run zatca:sdk-validate -- --require --out=zatca-samples
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zatca-samples
+          path: apps/api/zatca-samples

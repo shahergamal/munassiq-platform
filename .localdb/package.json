@@ -1,0 +1,12 @@
+{
+  "name": "munassiq-localdb",
+  "private": true,
+  "description": "PostgreSQL 16 for development machines without Docker. Mirrors docker-compose.yml + db/bootstrap-roles.sh.",
+  "scripts": {
+    "start": "node start.mjs",
+    "reset": "node start.mjs --reset"
+  },
+  "dependencies": {
+    "embedded-postgres": "16.14.0-beta.17"
+  }
+}

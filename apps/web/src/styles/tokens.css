@@ -1,0 +1,101 @@
+/* Design tokens. Source of truth: /DESIGN.md. Components reference these; no raw colours elsewhere. */
+:root {
+  /* Canvas and surfaces: white cards floating on a cool off-white page. */
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --muted: #f2f4f7;
+  --subtle: #f9fafb;
+  --text: #101828;
+  --text-muted: #667085;
+  --text-faint: #98a2b3;
+  --border: #eaecf0;
+  --control-border: #858e9f; /* 3.3:1 on white: input edges must stay visible (WCAG 1.4.11) */
+  --divider: #d0d5dd;
+
+  /* One signature blue: primary actions, the active path and focus. White text on it: 5.2:1. */
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-fg: #ffffff;
+  --primary-soft: #eff4ff;
+  --ring: #2563eb;
+  --ring-soft: #d1e0ff;
+
+  /* Semantic status: meaning only, never decoration. */
+  --success: #067647;
+  --success-soft: #ecfdf3;
+  --warning: #b54708;
+  --warning-fg: #93370d;
+  --warning-soft: #fffaeb;
+  --danger: #b42318;
+  --danger-fg: #ffffff;
+  --danger-soft: #fef3f2;
+
+  /* Category tints (icon tiles, tags, list accents). Each pair clears 4.5:1 text on its own tint. */
+  --tint-indigo: #eef0ff;   --on-indigo: #4338ca;
+  --tint-sky: #e0f2fe;      --on-sky: #0369a1;
+  --tint-green: #dcfce7;    --on-green: #15803d;
+  --tint-amber: #fef3c7;    --on-amber: #b45309;
+  --tint-red: #fee2e2;      --on-red: #b91c1c;
+  --tint-violet: #f3e8ff;   --on-violet: #7e22ce;
+  --tint-orange: #ffedd5;   --on-orange: #c2410c;
+
+  --overlay: rgb(16 24 40 / .45);
+
+  /* Phone header: the signature blue deepened to navy-indigo, white on it (≥ 12:1). Its own lines and muted text. */
+  --hero-from: #1e2a78;
+  --hero-to: #34306e;
+  --hero-fg: #ffffff;
+  --hero-fg-muted: rgb(255 255 255 / .78);
+  --hero-line: rgb(255 255 255 / .16);
+  --hero-glass: rgb(255 255 255 / .12);
+
+  /* Type */
+  /* "Munassiq Riyal" only draws U+20C1 (the riyal sign); every other character falls through to IBM Plex Sans Arabic. */
+  --font: "Munassiq Riyal", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+  --fs-3xl: 28px;
+
+  /* Space: tight inside a card, generous between cards. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --content-max: 1480px;
+  --sidebar-w: 256px;
+  --topbar-h: 60px;
+  --tabbar-h: 68px;
+
+  /* Shape and elevation: hairline border + soft shadow is the one separation language. */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / .05);
+  --shadow-card: 0 1px 3px rgb(16 24 40 / .06), 0 1px 2px rgb(16 24 40 / .04);
+  --shadow-float: 0 12px 32px -4px rgb(16 24 40 / .12), 0 4px 8px -2px rgb(16 24 40 / .05);
+
+  /* Control sizes */
+  --h-sm: 32px;
+  --h-md: 38px;
+  --h-lg: 44px;
+  --touch: 44px;
+
+  /* Motion */
+  --dur-micro: 140ms;
+  --dur-ui: 200ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-micro: 0ms; --dur-ui: 0ms; }
+}
