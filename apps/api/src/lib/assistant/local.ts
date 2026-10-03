@@ -48,7 +48,7 @@ interface Plan {
   title?: string;
 }
 
-type Area = "general" | "catalog" | "stock" | "purchases" | "recipes" | "sales" | "expenses" | "platform";
+type Area = "general" | "catalog" | "stock" | "purchases" | "recipes" | "sales" | "expenses" | "contracting" | "platform";
 interface Intent {
   id: string;
   area: Area;
@@ -872,6 +872,27 @@ function vatIntent(q: Q): Plan | null {
   });
 }
 
+const PORTFOLIO_FLAG: Record<string, string> = { loss: "خسارة متوقعة", behind: "متأخر عن البرنامج", over_cost: "تجاوز التكلفة", lti: "إصابة مضيعة للوقت", no_estimate: "بلا تقدير للتكلفة" };
+function portfolioIntent(q: Q): Plan | null {
+  if (!has1(q, "contracting_portfolio")) return null;
+  return one([{ name: "contracting_portfolio", input: {} }], (r) => {
+    const res = get(r, "contracting_portfolio");
+    const bad = failed(res, "محفظة المشاريع");
+    if (bad) return bad;
+    const d = res!.data;
+    const items = arr(d.items);
+    if (!items.length) return "لا مشاريع مفتوحة بعد.";
+    const t = d.totals ?? {};
+    const flagged = items.filter((x) => arr(x.flags).length);
+    const lines = items.map((x) => [String(x.code), fmt.money(x.contractValue), fmt.pct(x.progressPct), x.eac === null ? "غير مقدَّرة" : fmt.money(x.eac),
+      x.margin === null ? "—" : `${fmt.money(x.margin)} (${fmt.pct(x.marginPct)})`, arr(x.flags).map((f) => PORTFOLIO_FLAG[String(f)] ?? String(f)).join("، ") || "—"]);
+    return `محفظة المشاريع: **${fmt.num(items.length)}** مشروعاً بقيمة **${fmt.money(t.contractValue)}**، اعتُمد منها ${fmt.money(t.certified)} والمتبقي ${fmt.money(t.backlog)}.`
+      + ` الهامش المتوقع للمشاريع المقدّرة **${fmt.money(t.margin)}** من ${fmt.money(t.marginOf)}${t.unknownMargin ? `، و${fmt.num(t.unknownMargin)} مشروع بلا تقدير للتكلفة فلا يُحسب هامشه` : ""}.`
+      + `\n\n${table(["المشروع", "القيمة", "الإنجاز", "التكلفة المتوقعة", "الهامش", "تنبيهات"], lines.slice(0, 20))}`
+      + (flagged.length ? `\n\nتحتاج متابعة: ${flagged.map((x) => `${x.code} (${arr(x.flags).map((f) => PORTFOLIO_FLAG[String(f)] ?? String(f)).join("، ")})`).join("؛ ")}.` : "");
+  }, { source: "contracting_portfolio", input: {}, title: "محفظة المشاريع" });
+}
+
 function overviewIntent(q: Q): Plan | null {
   if (!has1(q, "workspace_overview")) return null;
   return one([{ name: "workspace_overview", input: {} }], (r) => {
@@ -947,6 +968,8 @@ const INTENTS: Intent[] = [
 
   { id: "expenses", area: "expenses", what: "المصروفات", words: [["مصروف", 5], ["مصروفات", 5], ["مصاريف", 5], ["نفقات", 5], ["ايجار", 3], ["رواتب", 3], ["كهرباء", 3], ["expenses", 4]], build: expensesIntent,
     example: "ما المصروفات بانتظار الاعتماد؟" },
+  { id: "portfolio", area: "contracting", what: "محفظة المشاريع", words: [["محفظه", 5], ["المحفظه", 5], ["هامش المشاريع", 7], ["هوامش", 5], ["ربحيه المشاريع", 7], ["المشاريع الخاسره", 7], ["مشاريع خاسره", 7], ["تكلفه المشاريع", 5], ["مشاريعي", 4], ["المشاريع", 3], ["مشروع", 2]],
+    build: portfolioIntent, example: "ما هامش مشاريعي وأيها خاسر؟" },
   { id: "vat", area: "sales", what: "تقرير الضريبة", words: [["ضريبه", 4], ["القيمه المضافه", 6], ["vat", 5], ["اقرار", 3]], build: vatIntent },
   { id: "overview", area: "catalog", what: "بيانات المنشأة", words: [["اشتراك", 5], ["باقه", 5], ["باقتي", 5], ["حدود الباقه", 6], ["بيانات المنشاه", 5], ["اعدادات", 4], ["حد الخصم", 5], ["نسبه الضريبه", 7], ["عدد المستخدمين", 5]], build: overviewIntent },
   { id: "locations", area: "catalog", what: "المواقع", weak: true, words: [["مواقع", 4], ["مطابخ", 4], ["مستودعات", 4], ["المستودعات", 4]], build: simpleList("list_locations", "المطابخ والمستودعات", [["الموقع", "name"], ["الرمز", "code"], ["النوع", "locationType", (v) => (v === "kitchen" ? "مطبخ" : v === "warehouse" ? "مستودع" : String(v ?? "—"))], ["نشط", "isActive"]], "لا توجد مواقع بعد.") },

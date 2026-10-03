@@ -21,22 +21,49 @@ const monthEnd = (p: string) => new Date(Date.UTC(Number(p.slice(0, 4)), Number(
 
 interface ActRow { id: string; parent_id: string | null; code: string; name: string; is_summary: boolean; start: string | null; finish: string | null; budget: string; pct: string;
   actual_start: string | null; actual_finish: string | null; wbs_id: string | null; sort: number }
-async function activities(db: Db, projectId: string) {
+export async function activities(db: Db, projectId: string) {
   return (await db.query<ActRow>(
     `SELECT id, parent_id, code, name, is_summary, start_date::text AS start, finish_date::text AS finish, budget::text, pct_complete::text AS pct,
             actual_start::text, actual_finish::text, wbs_id, sort FROM schedule_activities WHERE project_id = $1 ORDER BY sort, code`, [projectId])).rows;
 }
-const leaves = (rows: ActRow[]): Activity[] => rows.filter((a) => !a.is_summary && a.start && a.finish)
+export const leaves = (rows: ActRow[]): Activity[] => rows.filter((a) => !a.is_summary && a.start && a.finish)
   .map((a) => ({ start: a.start!, finish: a.finish!, budget: h(a.budget), pctComplete: Number(a.pct) }));
 
 /** The project's cost to date from the ledger: expenses on its cost center, not the contra or close entries. */
-async function actualCost(db: Db, projectId: string, asOf: string) {
+export async function actualCost(db: Db, projectId: string, asOf: string) {
   return h((await db.query<{ v: string }>(
     `SELECT coalesce(sum(l.debit - l.credit), 0)::text AS v FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
        JOIN projects p ON p.cost_center_id = l.cost_center_id
       WHERE p.id = $1 AND a.type = 'expense' AND e.entry_date <= $2 AND e.source_type <> 'contract_close'`, [projectId, asOf])).rows[0]!.v);
 }
-const bacOf = async (db: Db, projectId: string) => h((await db.query<{ v: string }>("SELECT coalesce(sum(amount), 0)::text AS v FROM project_budgets WHERE project_id = $1", [projectId])).rows[0]!.v);
+export const bacOf = async (db: Db, projectId: string) => h((await db.query<{ v: string }>("SELECT coalesce(sum(amount), 0)::text AS v FROM project_budgets WHERE project_id = $1", [projectId])).rows[0]!.v);
+
+/** A project's earned value on a date (halalas): the programme's planned and earned value, the ledger's actual cost. */
+export async function projectEvm(db: Db, projectId: string, asOf: string) {
+  const acts = leaves(await activities(db, projectId));
+  return { acts, ...earnedValue(acts, { bac: await bacOf(db, projectId), ac: await actualCost(db, projectId, asOf), date: asOf }) };
+}
+
+/**
+ * The project's cash flow for the months ahead (halalas, before VAT): the main contracts' remaining value (less
+ * retention and the advance still to recover) paid the customer's terms later, and the cost still to spend (EAC − AC),
+ * both along the programme's planned curve.
+ */
+export async function projectCashFlow(db: Db, projectId: string, months: number, asOf: string) {
+  const e = await projectEvm(db, projectId, asOf);
+  const m = (await db.query<{ value: string; certified: string; retention: string; advance: string; recovered: string; terms: string }>(
+    `SELECT coalesce(sum(k.value + coalesce((SELECT sum(vl.quantity * vl.rate) FROM variation_lines vl JOIN variations v ON v.id = vl.variation_id WHERE v.contract_id = k.id AND v.status = 'approved'), 0)), 0)::text AS value,
+            coalesce(sum((SELECT gross_to_date FROM ipcs i WHERE i.contract_id = k.id AND i.status IN ('approved', 'invoiced') ORDER BY i.number DESC LIMIT 1)), 0)::text AS certified,
+            coalesce(max(k.retention_pct), 0)::text AS retention,
+            coalesce(sum((SELECT sum(taxable) FROM sales_documents d WHERE d.contract_id = k.id AND d.kind = 'prepayment')), 0)::text AS advance,
+            coalesce(sum((SELECT sum(advance_recovery) FROM ipcs i WHERE i.contract_id = k.id AND i.status IN ('approved', 'invoiced'))), 0)::text AS recovered,
+            coalesce(max(c.payment_terms_days), 30)::text AS terms
+       FROM contracts k LEFT JOIN customers c ON c.id = k.customer_id WHERE k.project_id = $1 AND k.role = 'MAIN' AND k.status = 'active'`, [projectId])).rows[0]!;
+  const items = cashFlow({ curve: plannedCurve(e.acts, e.bac), from: asOf.slice(0, 7), months,
+    remainingRevenue: Math.max(0, h(m.value) - h(m.certified)), remainingCost: Math.max(0, e.eac - e.ac), retentionPct: Number(m.retention),
+    advanceToRecover: Math.max(0, h(m.advance) - h(m.recovered)), vatPct: 0, inputVatShare: 0, paymentLagMonths: Math.ceil(Number(m.terms) / 30) });
+  return { hasSchedule: e.acts.length > 0, items };
+}
 
 export default async function controlRoutes(app: FastifyInstance) {
   // ── Programme ─────────────────────────────────────────────────────────────────────────────
@@ -241,23 +268,9 @@ export default async function controlRoutes(app: FastifyInstance) {
     const q = z.object({ months: z.coerce.number().int().min(1).max(36).default(12) }).parse(req.query);
     return tenantTx(req, async (db) => {
       const asOf = today();
-      const acts = leaves(await activities(db, id));
-      const bac = await bacOf(db, id);
-      const ac = await actualCost(db, id, asOf);
-      const e = earnedValue(acts, { bac, ac, date: asOf });
-      const m = (await db.query<{ value: string; certified: string; retention: string; advance: string; recovered: string; terms: string }>(
-        `SELECT coalesce(sum(k.value + coalesce((SELECT sum(vl.quantity * vl.rate) FROM variation_lines vl JOIN variations v ON v.id = vl.variation_id WHERE v.contract_id = k.id AND v.status = 'approved'), 0)), 0)::text AS value,
-                coalesce(sum((SELECT gross_to_date FROM ipcs i WHERE i.contract_id = k.id AND i.status IN ('approved', 'invoiced') ORDER BY i.number DESC LIMIT 1)), 0)::text AS certified,
-                coalesce(max(k.retention_pct), 0)::text AS retention,
-                coalesce(sum((SELECT sum(taxable) FROM sales_documents d WHERE d.contract_id = k.id AND d.kind = 'prepayment')), 0)::text AS advance,
-                coalesce(sum((SELECT sum(advance_recovery) FROM ipcs i WHERE i.contract_id = k.id AND i.status IN ('approved', 'invoiced'))), 0)::text AS recovered,
-                coalesce(max(c.payment_terms_days), 30)::text AS terms
-           FROM contracts k LEFT JOIN customers c ON c.id = k.customer_id WHERE k.project_id = $1 AND k.role = 'MAIN' AND k.status = 'active'`, [id])).rows[0]!;
-      const items = cashFlow({ curve: plannedCurve(acts, e.bac), from: asOf.slice(0, 7), months: q.months,
-        remainingRevenue: Math.max(0, h(m.value) - h(m.certified)), remainingCost: Math.max(0, e.eac - ac), retentionPct: Number(m.retention),
-        advanceToRecover: Math.max(0, h(m.advance) - h(m.recovered)), vatPct: 0, inputVatShare: 0, paymentLagMonths: Math.ceil(Number(m.terms) / 30) });
-      return { asOf, basis: "قبل ضريبة القيمة المضافة", hasSchedule: acts.length > 0,
-        items: items.map((x) => ({ period: x.period, inflow: r(x.inflow), outflow: r(x.outflow), net: r(x.net), cumulative: r(x.cumulative) })) };
+      const f = await projectCashFlow(db, id, q.months, asOf);
+      return { asOf, basis: "قبل ضريبة القيمة المضافة", hasSchedule: f.hasSchedule,
+        items: f.items.map((x) => ({ period: x.period, inflow: r(x.inflow), outflow: r(x.outflow), net: r(x.net), cumulative: r(x.cumulative) })) };
     }, { readOnly: true });
   });
 }

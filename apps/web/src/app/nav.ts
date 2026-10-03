@@ -2,7 +2,7 @@ import {
   Armchair, Calculator, Layers, LineChart, Percent, Target, ArrowLeftRight, Bike, ClipboardCheck, CookingPot, ListPlus, Split, Users, History, Landmark, PieChart, Receipt, Soup, Trash2, Undo2, Wallet,
   BarChart3, Boxes, Building2, ChefHat, Clock3, LayoutDashboard, MapPin, PackageOpen, ReceiptText, Scale,
   BookOpen, FileChartColumn, FileText, HandCoins, ListTree, NotebookPen, SlidersHorizontal, Link2, CreditCard,
-  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, ShieldAlert, FolderOpen, RadioTower, BadgeCheck, type LucideIcon,
+  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, ShieldAlert, FolderOpen, RadioTower, BadgeCheck, Briefcase, type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "../api/types";
 
@@ -19,6 +19,7 @@ export const NAV: NavGroup[] = [
   {
     label: "المقاولات",
     items: [
+      { label: "محفظة المشاريع", to: "/w/$tenantId/contracting/portfolio", icon: Briefcase, permission: "con_reports.view" },
       { label: "العطاءات والتسعير", to: "/w/$tenantId/contracting/tenders", icon: Calculator, permission: "tenders.view" },
       { label: "المشاريع والعقود", to: "/w/$tenantId/contracting/projects", icon: HardHat, permission: "projects.view" },
       { label: "مقاولو الباطن", to: "/w/$tenantId/contracting/subcontractors", icon: Handshake, permission: "subcontractors.view" },

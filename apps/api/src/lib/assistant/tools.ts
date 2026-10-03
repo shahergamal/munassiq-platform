@@ -148,6 +148,9 @@ export const TOOLS: ToolDef[] = [
     description: "Per cashier: closed shifts, sales and cash over/short.", path: () => "/reports/cashier-reconciliation", query: ["from", "to"] }),
   t({ name: "report_vat", label: "ضريبة القيمة المضافة", permission: "rep_vat.view", params: { from: FROM, to: TO },
     description: "Output VAT (invoices less credit notes), input VAT (purchases less returns, expenses) and net VAT. Not an official return.", path: () => "/reports/vat", query: ["from", "to"] }),
+  t({ name: "contracting_portfolio", label: "محفظة المشاريع", permission: "con_reports.view", params: {},
+    description: "Contracting portfolio per project: contract value with variations and agreed claims, certified, billed, receivable, retention, cost to date, committed, estimate at completion (basis: evm/budget/estimate, null when unknown), forecast margin and %, backlog, SPI/CPI, open NCRs, lost-time injuries, flags (loss, behind, over_cost, lti, no_estimate); and totals.",
+    path: () => "/contracting/portfolio" }),
 ];
 
 export const TOOL_BY_NAME = new Map(TOOLS.map((d) => [d.name, d]));

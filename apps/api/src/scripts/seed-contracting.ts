@@ -64,6 +64,7 @@ if (existing.some((p) => p.code === "PRJ-RD7")) {
   await site();
   await telecom();
   await handover();
+  await towerCosts();
   console.log(`ready (data already present): ${email} — password in apps/api/.demo-accounts.local`);
   process.exit(0);
 }
@@ -157,6 +158,7 @@ await control();
 await site();
 await telecom();
 await handover();
+await towerCosts();
 
 console.log(`ready: ${email} — password in apps/api/.demo-accounts.local`);
 
@@ -311,4 +313,18 @@ async function handover() {
   await item("defect", "تسرب مياه حول نافذة غرفة النوم الرئيسية", addDays(-12), addDays(3), "الدور الأول");
   for (const id of [a, b]) await call("POST", `/t/handover-items/${id}/fix`, { date: addDays(-105) });
   await call("POST", `/t/handover-items/${a}/verify`, { date: addDays(-100) });
+}
+
+/** C13: the tower's site costs to date (an accrual on its cost center) so its earned value reads like a real job. */
+async function towerCosts() {
+  const towerId = (await call<{ items: { id: string; code: string }[] }>("GET", "/t/projects")).items.find((p) => p.code === "PRJ-TWR")!.id;
+  if ((await call<{ totals: { actual: number } }>("GET", `/t/projects/${towerId}/cost-control`)).totals.actual > 900_000) return;
+  const cc = (await call<{ costCenterId: string }>("GET", `/t/projects/${towerId}`)).costCenterId;
+  const accounts = (await call<{ items: { id: string; code: string; type: string; isGroup: boolean; systemKey: string | null }[] }>("GET", "/t/accounts")).items;
+  const expense = accounts.find((a) => a.systemKey === "contract_materials") ?? accounts.find((a) => a.type === "expense" && !a.isGroup)!;
+  const payable = accounts.find((a) => a.systemKey === "accrued_expenses") ?? accounts.find((a) => a.type === "liability" && !a.isGroup)!;
+  const month = new Date(); month.setUTCDate(0);
+  await call("POST", "/t/accounting/journal", { date: month.toISOString().slice(0, 10), description: "تكاليف موقع البرج المستحقة حتى نهاية الشهر (بيانات تجريبية)", lines: [
+    { accountId: expense.id, debit: 820_000, credit: 0, costCenterId: cc, memo: "مواد وعمالة ومعدات غير مفوترة" },
+    { accountId: payable.id, debit: 0, credit: 820_000, memo: "مستحقات" }] }, idem());
 }

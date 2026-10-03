@@ -25,6 +25,7 @@ import contractingQualityRoutes from "./routes/contracting/quality.ts";
 import contractingDocumentRoutes from "./routes/contracting/documents.ts";
 import contractingTelecomRoutes from "./routes/contracting/telecom.ts";
 import contractingHandoverRoutes from "./routes/contracting/handover.ts";
+import contractingPortfolioRoutes from "./routes/contracting/portfolio.ts";
 import billingRoutes from "./routes/billing.ts";
 import { recordSecurityEvent } from "./lib/ops/service.ts";
 import paymentsRoutes from "./routes/restaurants/payments.ts";
@@ -165,6 +166,7 @@ export async function buildApp() {
     await t.register(contractingDocumentRoutes);
     await t.register(contractingTelecomRoutes);
     await t.register(contractingHandoverRoutes);
+    await t.register(contractingPortfolioRoutes);
     await t.register(salesOrderRoutes);
     await t.register(priceListRoutes);
     await t.register(importRoutes);
