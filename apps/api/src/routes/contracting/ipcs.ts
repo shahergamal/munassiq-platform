@@ -163,7 +163,8 @@ export default async function ipcRoutes(app: FastifyInstance) {
     if (b.periodFrom > today()) throw badRequest("فترة المستخلص لم تبدأ بعد");
     const ipcId = await tenantTx(req, async (db) => {
       const c = await loadContract(db, id, true);
-      if (c.status !== "active") throw conflict("المستخلصات على عقد مفعّل");
+      // After final acceptance the contract is completed: only its final IPC (the final account) may follow.
+      if (c.status !== "active" && !(c.status === "completed" && b.kind === "final")) throw conflict(c.status === "completed" ? "استُلم العقد نهائياً: يبقى المستخلص الختامي فقط" : "المستخلصات على عقد مفعّل");
       if ((await db.query("SELECT 1 FROM ipcs WHERE contract_id = $1 AND kind = 'final' AND status IN ('approved', 'invoiced')", [id])).rowCount) throw conflict("صدر المستخلص الختامي للعقد");
       const last = (await db.query<{ id: string; period_to: string }>(`SELECT id, period_to::text FROM ipcs WHERE contract_id = $1 AND status IN ${APPROVED} ORDER BY number DESC LIMIT 1`, [id])).rows[0];
       if (last && b.periodFrom <= last.period_to) throw badRequest(`الفترة تبدأ بعد نهاية المستخلص السابق (${last.period_to})`);

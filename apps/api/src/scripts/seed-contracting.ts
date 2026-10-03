@@ -63,6 +63,7 @@ if (existing.some((p) => p.code === "PRJ-RD7")) {
   await control();
   await site();
   await telecom();
+  await handover();
   console.log(`ready (data already present): ${email} — password in apps/api/.demo-accounts.local`);
   process.exit(0);
 }
@@ -155,6 +156,7 @@ await subcontracting();
 await control();
 await site();
 await telecom();
+await handover();
 
 console.log(`ready: ${email} — password in apps/api/.demo-accounts.local`);
 
@@ -290,4 +292,23 @@ async function telecom() {
   }
   const held = (await call<{ items: { id: string; code: string; name: string; siteType: string }[] }>("GET", `/t/projects/${project}/sites?q=RUH-5G-008`)).items[0]!;
   await call("PUT", `/t/telecom-sites/${held.id}`, { name: held.name, region: "شمال الرياض", siteType: held.siteType, contractId: contract, holdReason: "بانتظار موافقة الأمانة على التصريح" });
+}
+
+/** C12: a villa handed over four months ago, in its defects liability period, with its snag list and a defect. */
+async function handover() {
+  if ((await call<{ items: { code: string }[] }>("GET", "/t/projects")).items.some((p) => p.code === "PRJ-VIL")) return;
+  const owner = (await call("POST", "/t/customers", { name: "عميل فيلا الياسمين (تجريبي)", phone: "0559998877", customerType: "individual" })).id as string;
+  const project = (await call("POST", "/t/projects", { code: "PRJ-VIL", name: "فيلا سكنية - حي الياسمين", specialty: "BUILDING", clientId: owner, location: "الرياض" })).id as string;
+  const contract = (await call("POST", "/t/contracts", { projectId: project, number: "VIL-2025-07", title: "تنفيذ فيلا سكنية تسليم مفتاح", customerId: owner, profile: "CUSTOM",
+    pricingModel: "LUMP_SUM", governingRegime: "PRIVATE", value: 850_000, retentionPct: 5, dlpMonths: 12 })).id as string;
+  await call("POST", `/t/contracts/${contract}/boq/items`, { code: "V1", description: "تنفيذ الفيلا كاملة", unit: "ls", quantity: 1, rate: 850_000 });
+  await call("POST", `/t/contracts/${contract}/activate`);
+  await call("POST", `/t/contracts/${contract}/taking-over`, { date: addDays(-120), reference: "TOC-VIL-01", notes: "استلام ابتدائي بحضور المالك والاستشاري" });
+  const item = async (kind: string, description: string, reportedOn: string, dueOn: string | null, location: string) =>
+    (await call("POST", `/t/contracts/${contract}/handover-items`, { kind, description, reportedOn, dueOn, location })).id as string;
+  const a = await item("snag", "تعديل ميول تصريف السطح", addDays(-120), addDays(-100), "السطح");
+  const b = await item("snag", "استبدال بلاطة مكسورة عند المدخل", addDays(-120), addDays(-110), "المدخل الرئيسي");
+  await item("defect", "تسرب مياه حول نافذة غرفة النوم الرئيسية", addDays(-12), addDays(3), "الدور الأول");
+  for (const id of [a, b]) await call("POST", `/t/handover-items/${id}/fix`, { date: addDays(-105) });
+  await call("POST", `/t/handover-items/${a}/verify`, { date: addDays(-100) });
 }

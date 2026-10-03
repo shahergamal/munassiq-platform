@@ -2,7 +2,7 @@ import {
   Armchair, Calculator, Layers, LineChart, Percent, Target, ArrowLeftRight, Bike, ClipboardCheck, CookingPot, ListPlus, Split, Users, History, Landmark, PieChart, Receipt, Soup, Trash2, Undo2, Wallet,
   BarChart3, Boxes, Building2, ChefHat, Clock3, LayoutDashboard, MapPin, PackageOpen, ReceiptText, Scale,
   BookOpen, FileChartColumn, FileText, HandCoins, ListTree, NotebookPen, SlidersHorizontal, Link2, CreditCard,
-  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, ShieldAlert, FolderOpen, RadioTower, type LucideIcon,
+  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, ShieldAlert, FolderOpen, RadioTower, BadgeCheck, type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "../api/types";
 
@@ -29,6 +29,7 @@ export const NAV: NavGroup[] = [
       { label: "الجودة والفحص", to: "/w/$tenantId/contracting/quality", icon: ClipboardCheck, permission: "quality.view" },
       { label: "السلامة", to: "/w/$tenantId/contracting/safety", icon: ShieldAlert, permission: "hse.view" },
       { label: "ضبط الوثائق", to: "/w/$tenantId/contracting/documents", icon: FolderOpen, permission: "documents.view" },
+      { label: "الاستلام وفترة الضمان", to: "/w/$tenantId/contracting/handovers", icon: BadgeCheck, permission: "handover.view" },
       { label: "أعمار المحتجزات", to: "/w/$tenantId/contracting/retention", icon: Wallet, permission: "retention.view" },
       { label: "الإيراد والأعمال تحت التنفيذ", to: "/w/$tenantId/contracting/revenue", icon: Scale, permission: "revenue.view" },
     ],

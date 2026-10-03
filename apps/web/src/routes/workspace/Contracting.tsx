@@ -15,6 +15,7 @@ import { ErrorState, FormError, TableSkeleton } from "../../ui/States";
 import { useToast } from "../../ui/Toast";
 import { StatusTabs } from "./Inventory";
 import { CustomerPicker } from "./pickers";
+import { HandoverTab } from "./Handover";
 import { DeductionsPanel, RecordInvoiceDialog, ReleaseDialog, SubAdvanceDialog, useSubcontractors, type Deduction } from "./Subcontracting";
 
 // Contracting (C1–C3): projects, the contract with its bill of quantities, the client's payment certificates (IPCs)
@@ -493,7 +494,7 @@ export function ContractPage() {
             title={Math.abs(f.boqTotal - c.value) > 0.004 ? `مجموع جدول الكميات ${money(f.boqTotal)} يختلف عن قيمة العقد ${money(c.value)}` : undefined}
             onClick={() => { setErr(null); setActivating(true); }}>تفعيل العقد</Button>}
           {active && c.openIpcId && <Link to="/w/$tenantId/contracting/ipcs/$ipcId" params={{ tenantId, ipcId: c.openIpcId }} className="btn btn-primary">المستخلص المفتوح</Link>}
-          {active && !c.openIpcId && !c.finalized && can("ipcs.create") && writable && <Button variant="primary" icon={<Plus />} onClick={() => setIpcOpen(true)}>مستخلص جديد</Button>}
+          {(active || c.status === "completed") && !c.openIpcId && !c.finalized && can("ipcs.create") && writable && <Button variant="primary" icon={<Plus />} onClick={() => setIpcOpen(true)}>{c.status === "completed" ? "المستخلص الختامي" : "مستخلص جديد"}</Button>}
         </>} />
       <div className="stats">
         <StatCard label="قيمة العقد" value={money(c.value)} icon={<FileSignature />} hue="indigo" note={f.approvedVariations ? `أوامر تغيير معتمدة ${money(f.approvedVariations)}` : undefined} />
@@ -511,12 +512,14 @@ export function ContractPage() {
       )}
       <section className="panel" aria-label="تفاصيل العقد">
         <div className="toolbar"><StatusTabs value={tab} onChange={setTab} options={[["boq", "جدول الكميات"], ["ipcs", "المستخلصات"], ["variations", "أوامر التغيير"], ["claims", "المطالبات"],
-          ["guarantees", "الضمانات"], ...(isSub ? [] : [["subs", "مقاولو الباطن"] as [string, string]])]} /></div>
+          ["guarantees", "الضمانات"], ...(can("handover.view") && c.status !== "draft" ? [["handover", "الاستلام والضمان"] as [string, string]] : []),
+          ...(isSub ? [] : [["subs", "مقاولو الباطن"] as [string, string]])]} /></div>
         {tab === "boq" && <BoqTab tenantId={tenantId} contract={c} />}
         {tab === "ipcs" && <IpcsTab tenantId={tenantId} contractId={contractId} onOpen={(id) => void navigate({ to: "/w/$tenantId/contracting/ipcs/$ipcId", params: { tenantId, ipcId: id } })} />}
         {tab === "variations" && <VariationsTab tenantId={tenantId} contract={c} />}
         {tab === "claims" && <ClaimsTab tenantId={tenantId} contract={c} />}
         {tab === "guarantees" && <GuaranteesTab tenantId={tenantId} contract={c} />}
+        {tab === "handover" && <HandoverTab contractId={contractId} />}
         {tab === "subs" && (
           <DataTable caption="عقود الباطن" query={{ ...q, data: { items: c.subcontracts } }} rowKey={(r) => r.id}
             onRowClick={(r) => void navigate({ to: "/w/$tenantId/contracting/contracts/$contractId", params: { tenantId, contractId: r.id } })}
@@ -533,7 +536,7 @@ export function ContractPage() {
       <ConfirmDialog open={activating} onClose={() => setActivating(false)} busy={busy} error={err ? errorMessage(err) : null} onConfirm={() => void activate()} destructive={false}
         title={`تفعيل العقد ${c.number}؟`} confirmLabel="تفعيل العقد"
         message={<>يُثبَّت جدول الكميات فلا يُعدّل بعدها إلا بأمر تغيير، وتُطبَّق السقوف النظامية لنظام العقد في تاريخ طرحه ({day(c.tenderDate)}) إن كانت موثقة من مدير المنصة. مجموع الجدول يجب أن يساوي {money(c.value)}.</>} />
-      {ipcOpen && <NewIpcDialog tenantId={tenantId} contractId={contractId} onClose={() => setIpcOpen(false)}
+      {ipcOpen && <NewIpcDialog tenantId={tenantId} contractId={contractId} finalOnly={c.status === "completed"} onClose={() => setIpcOpen(false)}
         onDone={(id) => void navigate({ to: "/w/$tenantId/contracting/ipcs/$ipcId", params: { tenantId, ipcId: id } })} />}
       {advanceOpen && (isSub ? <SubAdvanceDialog tenantId={tenantId} contractId={c.id} left={advanceLeft} vatMode={vatMode} onClose={() => setAdvanceOpen(false)} />
         : <AdvanceDialog tenantId={tenantId} contract={c} left={advanceLeft} onClose={() => setAdvanceOpen(false)} />)}
@@ -741,10 +744,10 @@ function IpcsTab({ tenantId, contractId, onOpen }: { tenantId: string; contractI
   );
 }
 
-function NewIpcDialog({ tenantId, contractId, onClose, onDone }: { tenantId: string; contractId: string; onClose: () => void; onDone: (id: string) => void }) {
+function NewIpcDialog({ tenantId, contractId, finalOnly, onClose, onDone }: { tenantId: string; contractId: string; finalOnly?: boolean; onClose: () => void; onDone: (id: string) => void }) {
   const invalidate = useInvalidate(tenantId);
   const now = isoDay();
-  const [v, setV] = useState({ periodFrom: `${now.slice(0, 7)}-01`, periodTo: now, kind: "interim" });
+  const [v, setV] = useState({ periodFrom: `${now.slice(0, 7)}-01`, periodTo: now, kind: finalOnly ? "final" : "interim" });
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   async function submit() {
@@ -763,8 +766,9 @@ function NewIpcDialog({ tenantId, contractId, onClose, onDone }: { tenantId: str
         <TextField label="من" required type="date" dir="ltr" value={v.periodFrom} onChange={(e) => setV({ ...v, periodFrom: e.target.value })} />
         <TextField label="إلى" required type="date" dir="ltr" value={v.periodTo} onChange={(e) => setV({ ...v, periodTo: e.target.value })} />
       </div>
-      <SelectField label="النوع" required value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value })}
-        options={[{ value: "interim", label: "جاري" }, { value: "final", label: "ختامي (يسترد باقي الدفعة المقدمة ويغلق المستخلصات)" }]} />
+      <SelectField label="النوع" required value={v.kind} disabled={finalOnly} onChange={(e) => setV({ ...v, kind: e.target.value })}
+        options={[{ value: "interim", label: "جاري" }, { value: "final", label: "ختامي (يسترد باقي الدفعة المقدمة ويغلق المستخلصات)" }]}
+        hint={finalOnly ? "استُلم العقد نهائياً: يبقى المستخلص الختامي فقط." : undefined} />
       <FormError error={error} />
     </Dialog>
   );

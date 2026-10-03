@@ -238,3 +238,12 @@ test("telecom: the site moves forward only, acceptance in order; milestones bill
     { status: "civil", items: [{ code: "T1", quantity: 1 }] }], terms);
   assert.deepEqual([...q.entries()], [["T1", 1.5], ["T2", 1.8]]);
 });
+
+import { addMonths, finalAcceptanceBlockers } from "../src/lib/contracting/handover.ts";
+test("handover: DLP end by calendar months; what blocks the final acceptance", () => {
+  assert.deepEqual([addMonths("2026-01-31", 1), addMonths("2024-01-31", 1), addMonths("2026-03-15", 12), addMonths("2026-11-30", 3), addMonths("2026-05-10", 120)],
+    ["2026-02-28", "2024-02-29", "2027-03-15", "2027-02-28", "2036-05-10"]);
+  assert.deepEqual(finalAcceptanceBlockers({ openItems: 0, ipcsInProgress: 0, dlpEndsOn: "2026-06-01", date: "2026-06-01", earlyReason: null }), []);
+  assert.equal(finalAcceptanceBlockers({ openItems: 2, ipcsInProgress: 1, dlpEndsOn: "2026-06-01", date: "2026-05-01", earlyReason: null }).length, 3);
+  assert.equal(finalAcceptanceBlockers({ openItems: 0, ipcsInProgress: 0, dlpEndsOn: "2026-06-01", date: "2026-05-01", earlyReason: "موافقة المالك" }).length, 0);
+});
