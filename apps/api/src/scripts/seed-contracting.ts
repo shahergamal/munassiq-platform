@@ -62,6 +62,7 @@ if (existing.some((p) => p.code === "PRJ-RD7")) {
   await subcontracting();
   await control();
   await site();
+  await telecom();
   console.log(`ready (data already present): ${email} — password in apps/api/.demo-accounts.local`);
   process.exit(0);
 }
@@ -153,6 +154,7 @@ void gov;
 await subcontracting();
 await control();
 await site();
+await telecom();
 
 console.log(`ready: ${email} — password in apps/api/.demo-accounts.local`);
 
@@ -254,4 +256,38 @@ async function site() {
   const rev = (await up.json()) as { id: string };
   await call("POST", `/t/document-revisions/${rev.id}/review`, { code: "B", reviewedOn: addDays(0), reviewer: "م. سارة القحطاني", comments: "تعديل التباعد عند الأعمدة الطرفية" });
   await call("POST", `/t/projects/${towerId}/transmittals`, { recipient: "فريق الموقع", purpose: "for_construction", sentOn: addDays(0), revisionIds: [rev.id] });
+}
+
+/** C11: a 5G rollout under a rate-card contract: twelve sites at different states, billed by milestones. */
+async function telecom() {
+  if ((await call<{ items: { code: string }[] }>("GET", "/t/projects")).items.some((p) => p.code === "PRJ-5G")) return;
+  const operator = (await call("POST", "/t/customers", { name: "مشغل الاتصالات (تجريبي)", phone: "0114445566", customerType: "business", vatNumber: "300000000000003",
+    street: "طريق الملك فهد", buildingNo: "7000", district: "العليا", city: "الرياض", postalCode: "12211" })).id as string;
+  const project = (await call("POST", "/t/projects", { code: "PRJ-5G", name: "نشر مواقع الجيل الخامس - الرياض", specialty: "TELECOM_SITE", clientId: operator, location: "الرياض" })).id as string;
+  const rate: [string, string, string, number, number][] = [["T-INST", "تركيب وتشغيل محطة كاملة", "site", 12, 85_000], ["T-FIB", "مد ألياف بصرية", "m", 3_000, 180], ["T-PWR", "توصيل الطاقة والتأريض", "site", 12, 9_500]];
+  const value = rate.reduce((a, r) => a + r[3] * r[4], 0);
+  const contract = (await call("POST", "/t/contracts", { projectId: project, number: "5G-RUH-2026", title: "اتفاقية إطار نشر المواقع", customerId: operator, profile: "CUSTOM",
+    pricingModel: "RATE_CARD", governingRegime: "PRIVATE", value, retentionPct: 5 })).id as string;
+  for (const [code, description, unit, quantity, r] of rate) await call("POST", `/t/contracts/${contract}/boq/items`, { code, description, unit, quantity, rate: r });
+  await call("POST", `/t/contracts/${contract}/activate`);
+  await call("PUT", `/t/contracts/${contract}/milestone-terms`, { items: [{ milestone: "on_air", pct: 60 }, { milestone: "pac", pct: 30 }, { milestone: "fac", pct: 10 }] });
+  const items = (await call<{ items: { id: string; code: string }[] }>("GET", `/t/contracts/${contract}/boq`)).items;
+  const id = (c: string) => items.find((i) => i.code === c)!.id;
+  const plan: [string, string, string, string[]][] = [
+    ["RUH-5G-001", "النرجس 1", "rooftop", ["survey", "installation", "on_air", "pac", "fac"]], ["RUH-5G-002", "النرجس 2", "rooftop", ["survey", "installation", "on_air", "pac"]],
+    ["RUH-5G-003", "الملقا", "greenfield", ["survey", "permitting", "civil", "installation", "on_air", "pac"]], ["RUH-5G-004", "حطين", "rooftop", ["survey", "installation", "on_air"]],
+    ["RUH-5G-005", "الياسمين", "greenfield", ["survey", "permitting", "civil", "installation", "on_air"]], ["RUH-5G-006", "مول الواحة", "indoor", ["survey", "installation"]],
+    ["RUH-5G-007", "القيروان", "greenfield", ["survey", "permitting", "civil"]], ["RUH-5G-008", "العارض", "greenfield", ["survey", "permitting"]],
+    ["RUH-5G-009", "الصحافة", "rooftop", ["survey"]], ["RUH-5G-010", "العقيق", "rooftop", []], ["RUH-5G-011", "الربيع", "small_cell", []], ["RUH-5G-012", "النخيل", "rooftop", ["survey"]]];
+  for (const [code, name, siteType, steps] of plan) {
+    const site = (await call("POST", `/t/projects/${project}/sites`, { code, name, region: "شمال الرياض", siteType, contractId: contract })).id as string;
+    await call("PUT", `/t/telecom-sites/${site}/items`, { items: [{ boqItemId: id("T-INST"), quantity: 1 }, { boqItemId: id("T-FIB"), quantity: siteType === "greenfield" ? 400 : 150 }, { boqItemId: id("T-PWR"), quantity: 1 }] });
+    let back = 70;
+    for (const to of steps) {
+      back -= 9;
+      await call("POST", `/t/telecom-sites/${site}/advance`, { to, date: addDays(-back), reference: to === "pac" ? `PAC-${code}` : to === "fac" ? `FAC-${code}` : null });
+    }
+  }
+  const held = (await call<{ items: { id: string; code: string; name: string; siteType: string }[] }>("GET", `/t/projects/${project}/sites?q=RUH-5G-008`)).items[0]!;
+  await call("PUT", `/t/telecom-sites/${held.id}`, { name: held.name, region: "شمال الرياض", siteType: held.siteType, contractId: contract, holdReason: "بانتظار موافقة الأمانة على التصريح" });
 }

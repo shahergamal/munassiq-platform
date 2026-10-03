@@ -30,6 +30,7 @@ import { SiteMaterialsPage } from "./routes/workspace/SiteMaterials";
 import { ProjectLaborPage } from "./routes/workspace/ProjectLabor";
 import { ProjectControlPage } from "./routes/workspace/ProjectControl";
 import { DailyReportsPage, DocumentsPage, SiteQualityPage, SafetyPage } from "./routes/workspace/SiteRecords";
+import { TelecomSitesPage } from "./routes/workspace/TelecomSites";
 import { AdminRegulatory } from "./routes/admin/AdminRegulatory";
 import { AttendancePage, EmployeePage, EmployeesPage, LeavesPage, PayrollPage, PayrollRunPage } from "./routes/workspace/Hr";
 import { OeeReport, PayrollReport, ProductionReport } from "./routes/workspace/OpsReports";
@@ -197,6 +198,7 @@ const tree = root.addChildren([
       w("/contracting/safety", "hse.view", SafetyPage),
       w("/contracting/documents", "documents.view", DocumentsPage),
       w("/contracting/daily-reports", "daily_reports.view", DailyReportsPage),
+      w("/contracting/telecom-sites", "telecom_sites.view", TelecomSitesPage),
       w("/contracting/tenders/$tenderId", "tenders.view", TenderPage),
       w("/hr/employees", "employees.view", EmployeesPage),
       w("/hr/employees/$employeeId", "employees.view", EmployeePage),

@@ -1059,6 +1059,10 @@ export function IpcPage() {
   const toast = useToast();
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ["t", tenantId, "contracting", "ipc", ipcId], queryFn: () => api<IpcDetail>("GET", `/t/ipcs/${ipcId}`, { tenant: tenantId }) });
+  // A telecom rate-card contract bills by site milestones: its draft IPC can be filled from the sites' states.
+  const terms = useQuery({ enabled: Boolean(q.data && q.data.status === "draft" && q.data.role !== "SUB" && can("telecom_sites.view")),
+    queryKey: ["t", tenantId, "contracting", "milestone-terms", q.data?.contractId],
+    queryFn: () => api<{ items: { milestone: string; pct: number }[] }>("GET", `/t/contracts/${q.data!.contractId}/milestone-terms`, { tenant: tenantId }) });
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [ldDays, setLdDays] = useState<string | null>(null);
   const [orderDate, setOrderDate] = useState("");
@@ -1082,6 +1086,8 @@ export function IpcPage() {
     try { await fn(); toast.success(done); setEdits({}); setConfirm(null); await invalidate("contracting"); } catch (e) { setError(e); } finally { setBusy(null); }
   }
   const save = () => run("save", () => api("PUT", `/t/ipcs/${ipcId}/quantities`, { tenant: tenantId, body: { lines: changes() } }), "حُفظت الكميات");
+  const fill = () => dirty ? setError(new Error("لديك كميات غير محفوظة: احفظها أو تراجع عنها قبل التعبئة من المواقع"))
+    : run("fill", () => api("POST", `/t/ipcs/${ipcId}/fill-from-sites`, { tenant: tenantId }), "عُبئت الكميات من حالة المواقع في نهاية الفترة");
   const submit = () => run("submit", async () => {
     if (dirty) await api("PUT", `/t/ipcs/${ipcId}/quantities`, { tenant: tenantId, body: { lines: changes() } });
     await api("POST", `/t/ipcs/${ipcId}/submit`, { tenant: tenantId, body: { ldDays: Math.round(num(ldDays ?? String(i.ldDays)) || 0) } });
@@ -1112,6 +1118,7 @@ export function IpcPage() {
         actions={<>
           <Link to="/w/$tenantId/contracting/contracts/$contractId" params={{ tenantId, contractId: i.contractId }} className="btn btn-ghost">العقد</Link>
           {i.status === "draft" && can("ipcs.create") && writable && <Button variant="ghost" icon={<Trash2 />} onClick={() => { setError(null); setConfirm("delete"); }}>حذف المسودة</Button>}
+          {editable && i.status === "draft" && Boolean(terms.data?.items.length) && <Button loading={busy === "fill"} loadingText="جارٍ التعبئة…" onClick={() => void fill()}>تعبئة من المواقع</Button>}
           {editable && dirty && i.status === "draft" && <Button loading={busy === "save"} loadingText="جارٍ الحفظ…" disabled={Boolean(invalid)} onClick={() => void save()}>حفظ الكميات</Button>}
           {writable && primary}
         </>} />

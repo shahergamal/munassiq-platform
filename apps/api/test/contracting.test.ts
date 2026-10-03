@@ -218,3 +218,23 @@ test("site: safety rates per man-hours, file types by their bytes, revision code
   assert.deepEqual([nextRevision(null), nextRevision("A"), nextRevision("Z"), nextRevision("AZ"), nextRevision("0"), nextRevision("9")], ["A", "B", "AA", "BA", "1", "10"]);
   assert.deepEqual([daysLate("2026-01-01", "2026-01-11"), daysLate("2026-01-20", "2026-01-11"), daysLate(null, "2026-01-11")], [10, 0, 0]);
 });
+
+import { billableShare, canMove, checkTerms, quantitiesToDate } from "../src/lib/contracting/telecom.ts";
+test("telecom: the site moves forward only, acceptance in order; milestones bill their share", () => {
+  assert.equal(canMove("planned", "installation").ok, true, "steps that do not apply are skipped");
+  assert.equal(canMove("civil", "survey").ok, false);
+  assert.equal(canMove("installation", "pac").ok, false, "PAC after on air");
+  assert.equal(canMove("on_air", "fac").ok, false, "FAC after PAC");
+  assert.equal(canMove("on_air", "cancelled").ok, false);
+  assert.equal(canMove("fac", "cancelled").ok, false);
+  const terms = { on_air: 60, pac: 30, fac: 10 };
+  assert.deepEqual([billableShare("installation", terms), billableShare("on_air", terms), billableShare("pac", terms), billableShare("fac", terms), billableShare("cancelled", terms)],
+    [0, 0.6, 0.9, 1, 0]);
+  assert.equal(checkTerms([{ milestone: "on_air", pct: 60 }, { milestone: "pac", pct: 30 }]), "مجموع النسب 90% ويجب أن يكون 100%");
+  assert.equal(checkTerms([{ milestone: "on_air", pct: 70 }, { milestone: "pac", pct: 30 }]), null);
+  const q = quantitiesToDate([
+    { status: "on_air", items: [{ code: "T1", quantity: 1 }, { code: "T2", quantity: 3 }] },
+    { status: "pac", items: [{ code: "T1", quantity: 1 }] },
+    { status: "civil", items: [{ code: "T1", quantity: 1 }] }], terms);
+  assert.deepEqual([...q.entries()], [["T1", 1.5], ["T2", 1.8]]);
+});

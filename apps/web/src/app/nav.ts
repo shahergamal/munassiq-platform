@@ -2,7 +2,7 @@ import {
   Armchair, Calculator, Layers, LineChart, Percent, Target, ArrowLeftRight, Bike, ClipboardCheck, CookingPot, ListPlus, Split, Users, History, Landmark, PieChart, Receipt, Soup, Trash2, Undo2, Wallet,
   BarChart3, Boxes, Building2, ChefHat, Clock3, LayoutDashboard, MapPin, PackageOpen, ReceiptText, Scale,
   BookOpen, FileChartColumn, FileText, HandCoins, ListTree, NotebookPen, SlidersHorizontal, Link2, CreditCard,
-  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, ShieldAlert, FolderOpen, type LucideIcon,
+  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, ShieldAlert, FolderOpen, RadioTower, type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "../api/types";
 
@@ -24,6 +24,7 @@ export const NAV: NavGroup[] = [
       { label: "مقاولو الباطن", to: "/w/$tenantId/contracting/subcontractors", icon: Handshake, permission: "subcontractors.view" },
       { label: "مواد المواقع والمعدات", to: "/w/$tenantId/contracting/site", icon: Boxes, permission: "site_stores.view" },
       { label: "العمالة على المشاريع", to: "/w/$tenantId/contracting/labor", icon: Users, permission: "labor.view" },
+      { label: "مواقع الاتصالات", to: "/w/$tenantId/contracting/telecom-sites", icon: RadioTower, permission: "telecom_sites.view" },
       { label: "التقارير اليومية", to: "/w/$tenantId/contracting/daily-reports", icon: NotebookPen, permission: "daily_reports.view" },
       { label: "الجودة والفحص", to: "/w/$tenantId/contracting/quality", icon: ClipboardCheck, permission: "quality.view" },
       { label: "السلامة", to: "/w/$tenantId/contracting/safety", icon: ShieldAlert, permission: "hse.view" },
