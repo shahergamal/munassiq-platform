@@ -119,7 +119,8 @@ describe("ZATCA Phase 2: the workspace onboards its own device; every document i
     const c = await call(app, owner, "POST", "/t/customers", { tenant, body: { name: "REJECT-ME", phone: "0551112222" } });
     const rej = await call(app, owner, "POST", "/t/sales-documents", { tenant, idem: true, body: { invoiceType: "simplified", customerId: c.body.id, paymentMeans: "cash", lines: [{ description: "x", quantity: 1, unitPrice: 10 }] } });
     expectStatus(rej, 201, "simplified with a buyer ZATCA rejects");
-    await waitFor(6);
+    // Seven submissions by now: four earlier documents, the network failure and its resend, then this rejection.
+    await waitFor(7);
     const s = (await call(app, owner, "GET", "/t/zatca/status", { tenant })).body.counts;
     assert.equal(s.rejected, 1);
     const list = (await call(app, owner, "GET", "/t/zatca/documents?status=rejected", { tenant })).body.items;

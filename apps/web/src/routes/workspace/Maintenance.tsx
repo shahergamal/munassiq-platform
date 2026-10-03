@@ -101,7 +101,7 @@ export function MaintenancePage() {
       <PageHeader eyebrow="الصيانة" title="أوامر الصيانة"
         description="الصيانة الوقائية المستحقة من خطط الآلات، والأعطال وإصلاحها. قطع الغيار المصروفة تخرج من المخزون إلى مصروف الصيانة بقيد واحد، ووقت التوقف يحسب متوسط الوقت بين الأعطال ومتوسط الإصلاح."
         actions={<>
-          {can("machines.view") && <Link to={`/w/${tenantId}/manufacturing/machines`} className="btn btn-ghost">الآلات والخطط</Link>}
+          {can("machines.view") && <Link to={`/w/${tenantId}/manufacturing/machines`} className="btn btn-ghost">{can("work_centers.view") ? "الآلات والخطط" : "المعدات والخطط"}</Link>}
           {canCreate && <Button loading={generating} loadingText="جارٍ الفحص…" icon={<CalendarCheck />} onClick={() => void generate()}>فتح أوامر المستحق</Button>}
           {canCreate && <Button variant="primary" icon={<AlarmClock />} onClick={() => setBreakdown(true)}>تسجيل عطل</Button>}
         </>} />
@@ -118,7 +118,7 @@ export function MaintenancePage() {
             empty={tab === "open" ? { title: "لا أوامر صيانة مفتوحة", body: "افتح أوامر الصيانة الوقائية المستحقة، أو سجّل عطلاً عند توقف آلة." } : { title: "لم يُنجز أمر صيانة بعد" }}
             columns={[
               { key: "number", header: "الأمر", cell: (r) => <Ref>{`WO-${r.number}`}</Ref> },
-              { key: "machineName", header: "الآلة", cell: (r) => <span className="stack-tight"><strong>{r.machineName}</strong><span className="muted num acc-small">{r.machineCode}</span></span> },
+              { key: "machineName", header: can("work_centers.view") ? "الآلة" : "المعدة", cell: (r) => <span className="stack-tight"><strong>{r.machineName}</strong><span className="muted num acc-small">{r.machineCode}</span></span> },
               { key: "kind", header: "النوع", cell: (r) => r.kind === "corrective" ? <Badge tone="danger">إصلاح عطل</Badge> : <Badge tone="info">وقائية</Badge> },
               { key: "description", header: "العمل", wrap: true, cell: (r) => r.planName ?? r.description },
               ...(tab === "open" ? [
@@ -137,9 +137,9 @@ export function MaintenancePage() {
             } : undefined} />
         ) : (
           <DataTable caption={`موثوقية الآلات من ${k ? day(k.from) : ""} إلى ${k ? day(k.to) : ""}`} query={{ ...kpis, data: k ? { items: k.items } : undefined }} rowKey={(r) => r.machineId}
-            empty={{ title: "لا توجد آلات", body: "أضف آلاتك من «الآلات والخطط» لترى موثوقيتها." }}
+            empty={can("work_centers.view") ? { title: "لا توجد آلات", body: "أضف آلاتك من «الآلات والخطط» لترى موثوقيتها." } : { title: "لا توجد معدات", body: "أضف معداتك من «المعدات والخطط» لترى موثوقيتها." }}
             columns={[
-              { key: "name", header: "الآلة", cell: (r) => <span className="stack-tight"><strong>{r.name}</strong><span className="muted num acc-small">{r.code}</span></span> },
+              { key: "name", header: can("work_centers.view") ? "الآلة" : "المعدة", cell: (r) => <span className="stack-tight"><strong>{r.name}</strong><span className="muted num acc-small">{r.code}</span></span> },
               { key: "failures", header: "الأعطال", numeric: true, cell: (r) => integer(r.failures) },
               { key: "downtimeMinutes", header: "التوقف", numeric: true, cell: (r) => hours(r.downtimeMinutes) },
               { key: "mtbfHours", header: "بين الأعطال (MTBF)", numeric: true, cell: (r) => <>{quantity(r.mtbfHours)} س{!r.failures && <span className="muted acc-small"> (بلا عطل)</span>}</> },
@@ -273,21 +273,25 @@ export function MachinesPage() {
   const [plan, setPlan] = useState<Plan | "new" | null>(null);
   const canCreate = can("machines.create") && writable;
   const canEdit = can("machines.edit") && writable;
+  // A contractor's machines are its equipment on sites; work centers belong to factories.
+  const factoryFloor = can("work_centers.view");
   return (
     <div className="page">
-      <PageHeader eyebrow="الصيانة" title="الآلات وخطط الصيانة"
-        description="الآلة مربوطة بمركز عمل: صيانتها تشغل وقته في جدولة الإنتاج، وقطع غيارها تُحمَّل على مركز تكلفته. خطة الصيانة الوقائية تُستحق بالأيام أو بقراءة العدّاد."
+      <PageHeader eyebrow="الصيانة" title={factoryFloor ? "الآلات وخطط الصيانة" : "المعدات وخطط الصيانة"}
+        description={factoryFloor ? "الآلة مربوطة بمركز عمل: صيانتها تشغل وقته في جدولة الإنتاج، وقطع غيارها تُحمَّل على مركز تكلفته. خطة الصيانة الوقائية تُستحق بالأيام أو بقراءة العدّاد."
+          : "المعدات وعدّاداتها، وخطط الصيانة الوقائية بالأيام أو بساعات التشغيل. تحميلها على المشاريع من «مواد المواقع والمعدات»."}
         actions={<>
           {canEdit && <Button icon={<Plus />} onClick={() => setPlan("new")} disabled={!machines.data?.items.length}>إضافة خطة</Button>}
-          {canCreate && <Button variant="primary" icon={<Plus />} onClick={() => setEditing("new")}>إضافة آلة</Button>}
+          {canCreate && <Button variant="primary" icon={<Plus />} onClick={() => setEditing("new")}>{factoryFloor ? "إضافة آلة" : "إضافة معدة"}</Button>}
         </>} />
       <section className="panel" aria-label="الآلات">
         <DataTable caption="الآلات" query={machines} rowKey={(r) => r.id} onRowClick={canEdit ? (r) => setEditing(r) : undefined}
-          empty={{ title: "لا توجد آلات بعد", body: "أضف الآلات والخطوط التي تحتاج صيانة، واربطها بمراكز العمل.",
-            action: canCreate ? <Button variant="primary" icon={<Plus />} onClick={() => setEditing("new")}>إضافة آلة</Button> : undefined }}
+          empty={{ title: factoryFloor ? "لا توجد آلات بعد" : "لا توجد معدات بعد",
+            body: factoryFloor ? "أضف الآلات والخطوط التي تحتاج صيانة، واربطها بمراكز العمل." : "أضف معداتك، ثم حدّد سعرها الداخلي للساعة من «مواد المواقع والمعدات» لتُحمَّل على المشاريع.",
+            action: canCreate ? <Button variant="primary" icon={<Plus />} onClick={() => setEditing("new")}>{factoryFloor ? "إضافة آلة" : "إضافة معدة"}</Button> : undefined }}
           columns={[
-            { key: "name", header: "الآلة", cell: (r) => <span className="stack-tight"><strong>{r.name}</strong><span className="muted num acc-small">{r.code}{r.serialNo ? ` · ${r.serialNo}` : ""}</span></span> },
-            { key: "workCenterName", header: "مركز العمل", cell: (r) => text(r.workCenterName) },
+            { key: "name", header: factoryFloor ? "الآلة" : "المعدة", cell: (r) => <span className="stack-tight"><strong>{r.name}</strong><span className="muted num acc-small">{r.code}{r.serialNo ? ` · ${r.serialNo}` : ""}</span></span> },
+            ...(factoryFloor ? [{ key: "workCenterName", header: "مركز العمل", cell: (r: Machine) => text(r.workCenterName) }] : []),
             { key: "meterReading", header: "العدّاد", numeric: true, cell: (r) => r.meterUnit ? `${quantity(r.meterReading)} ${r.meterUnit}` : "—" },
             { key: "plans", header: "خطط", numeric: true, cell: (r) => integer(r.plans) },
             { key: "openOrders", header: "أوامر مفتوحة", numeric: true, cell: (r) => integer(r.openOrders) },
@@ -321,7 +325,8 @@ function MachineDialog({ tenantId, machine, onClose }: { tenantId: string; machi
   const invalidate = useInvalidate(tenantId);
   const toast = useToast();
   const form = useRef<HTMLFormElement>(null);
-  const centers = useQuery({ queryKey: ["t", tenantId, "manufacturing", "work-centers"], queryFn: () => api<{ items: { id: string; name: string; isActive: boolean }[] }>("GET", "/t/work-centers", { tenant: tenantId }) });
+  const { can } = useTenant();
+  const centers = useQuery({ enabled: can("work_centers.view"), queryKey: ["t", tenantId, "manufacturing", "work-centers"], queryFn: () => api<{ items: { id: string; name: string; isActive: boolean }[] }>("GET", "/t/work-centers", { tenant: tenantId }) });
   const [v, setV] = useState({ code: machine?.code ?? "", name: machine?.name ?? "", workCenterId: machine?.workCenterId ?? "", serialNo: machine?.serialNo ?? "",
     meterUnit: machine?.meterUnit ?? "", isActive: machine?.isActive ?? true });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -344,14 +349,14 @@ function MachineDialog({ tenantId, machine, onClose }: { tenantId: string; machi
     } catch (err) { if (err instanceof ApiError) setErrors(err.fieldErrors); setError(err); } finally { setBusy(false); }
   }
   return (
-    <Dialog open onClose={onClose} busy={busy} formRef={form} onSubmit={() => void submit()} title={machine ? `تعديل «${machine.name}»` : "إضافة آلة"}
+    <Dialog open onClose={onClose} busy={busy} formRef={form} onSubmit={() => void submit()} title={machine ? `تعديل «${machine.name}»` : can("work_centers.view") ? "إضافة آلة" : "إضافة معدة"}
       footer={<><Button type="submit" variant="primary" loading={busy} loadingText="جارٍ الحفظ…">{machine ? "حفظ التعديلات" : "حفظ الآلة"}</Button><Button onClick={onClose} disabled={busy}>إلغاء</Button></>}>
       <div className="form-grid">
         <TextField label="الرمز" required dir="ltr" value={v.code} onChange={(e) => setV({ ...v, code: e.target.value.toUpperCase() })} error={errors.code} />
         <TextField label="الاسم" required value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} error={errors.name} />
-        <SelectField label="مركز العمل" optional placeholder="بدون مركز عمل" value={v.workCenterId} onChange={(e) => setV({ ...v, workCenterId: e.target.value })}
+        {can("work_centers.view") && <SelectField label="مركز العمل" optional placeholder="بدون مركز عمل" value={v.workCenterId} onChange={(e) => setV({ ...v, workCenterId: e.target.value })}
           options={(centers.data?.items ?? []).filter((c) => c.isActive || c.id === v.workCenterId).map((c) => ({ value: c.id, label: c.name }))}
-          hint="صيانتها تحجز وقته في جدولة الإنتاج" />
+          hint="صيانتها تحجز وقته في جدولة الإنتاج" />}
         <TextField label="الرقم التسلسلي" optional dir="ltr" value={v.serialNo} onChange={(e) => setV({ ...v, serialNo: e.target.value })} />
         <TextField label="وحدة العدّاد" optional value={v.meterUnit} onChange={(e) => setV({ ...v, meterUnit: e.target.value })} placeholder="ساعة تشغيل، دورة…" hint="لازمة لخطط الصيانة بالعدّاد" />
         {machine && <Checkbox label="نشطة" checked={v.isActive} onChange={(e) => setV({ ...v, isActive: e.target.checked })} />}
@@ -389,6 +394,7 @@ function MeterDialog({ tenantId, machine, onClose }: { tenantId: string; machine
 }
 
 function PlanDialog({ tenantId, plan, machines, partItems, onClose }: { tenantId: string; plan: Plan | null; machines: Machine[]; partItems: PartItem[]; onClose: () => void }) {
+  const { can } = useTenant();
   const invalidate = useInvalidate(tenantId);
   const toast = useToast();
   const form = useRef<HTMLFormElement>(null);
@@ -442,7 +448,7 @@ function PlanDialog({ tenantId, plan, machines, partItems, onClose }: { tenantId
         <TextField label={v.triggerKind === "days" ? "الفترة بالأيام" : `الفترة (${machine?.meterUnit ?? plan?.meterUnit ?? "وحدة العدّاد"})`} required numeric inputMode="decimal" dir="ltr"
           value={v.intervalValue} onChange={(e) => setV({ ...v, intervalValue: e.target.value })} error={errors.intervalValue} />
         <TextField label="مدة التنفيذ بالدقائق" required numeric inputMode="numeric" dir="ltr" value={v.plannedMinutes} onChange={(e) => setV({ ...v, plannedMinutes: e.target.value })}
-          error={errors.plannedMinutes} hint="تحجز وقت مركز العمل في الجدولة" />
+          error={errors.plannedMinutes} hint={can("work_centers.view") ? "تحجز وقت مركز العمل في الجدولة" : "مدة الصيانة المتوقعة"} />
         {!plan && v.triggerKind === "days" && <TextField label="آخر تنفيذ" optional type="date" dir="ltr" value={v.lastDoneOn} onChange={(e) => setV({ ...v, lastDoneOn: e.target.value })}
           hint="فارغ = مستحقة من اليوم" />}
         {plan && <Checkbox label="مفعّلة" checked={v.isActive} onChange={(e) => setV({ ...v, isActive: e.target.checked })} />}

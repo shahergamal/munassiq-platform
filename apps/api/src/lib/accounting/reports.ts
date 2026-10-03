@@ -207,7 +207,27 @@ export async function vatReturn(db: Db, from: string, to: string) {
     .reduce((s, x) => ({ a: s.a + h(x.a), v: s.v + h(x.v) }), { a: 0, v: 0 });
   const purchases = await q(`SELECT coalesce(sum(total), 0)::text AS a, coalesce(sum(vat_amount), 0)::text AS v FROM goods_receipts WHERE vat_amount > 0 AND received_on BETWEEN $1::date AND $2::date`);
   const returns = await q(`SELECT coalesce(sum(total_value), 0)::text AS a, coalesce(sum(vat_amount), 0)::text AS v FROM purchase_returns WHERE vat_amount > 0 AND ${inRange("created_at")}`);
+  // Advances deducted by final invoices of the period were declared on their prepayment invoices (386): out of box 1.
+  const applied = await q(`SELECT coalesce(sum(a.taxable), 0)::text AS a, coalesce(sum(a.vat), 0)::text AS v FROM prepayment_applications a
+                            JOIN sales_documents d ON d.id = a.invoice_id WHERE d.issue_date BETWEEN $1::date AND $2::date`);
   const expenses = await q(`SELECT coalesce(sum(amount_net), 0)::text AS a, coalesce(sum(vat_amount), 0)::text AS v FROM expenses WHERE status IN ('approved', 'paid') AND vat_amount > 0 AND expense_date BETWEEN $1::date AND $2::date`);
+  // Subcontractors: a registered resident's invoices (the period's supply net of advance recovery and damages, whose
+  // VAT was on the advance or is reduced) and advances go to box 7; a non-resident's are reverse-charged (box 9).
+  const rate = `(SELECT vat_rate_percent FROM tenant_settings)`;
+  const subIpc = (vat: "charged" | "reverse") => q(
+    `SELECT coalesce(sum(i.current_gross - i.advance_recovery - i.ld_amount), 0)::text AS a,
+            coalesce(sum(${vat === "charged" ? `i.vat - round((i.advance_recovery + i.ld_amount) * ${rate} / 100, 2)` : "i.reverse_charge_vat"}), 0)::text AS v
+       FROM ipcs i JOIN contracts c ON c.id = i.contract_id
+      WHERE c.role = 'SUB' AND i.status = 'invoiced' AND ${vat === "charged" ? "i.vat > 0" : "i.reverse_charge_vat > 0"}
+        AND coalesce(i.supplier_invoice_date, i.period_to) BETWEEN $1::date AND $2::date`);
+  const subAdv = (vat: "charged" | "reverse") => q(
+    `SELECT coalesce(sum(taxable), 0)::text AS a, coalesce(sum(${vat === "charged" ? "vat" : "reverse_charge_vat"}), 0)::text AS v FROM subcontract_advances
+      WHERE ${vat === "charged" ? "vat > 0" : "reverse_charge_vat > 0"} AND advance_date BETWEEN $1::date AND $2::date`);
+  const subs = [await subIpc("charged"), await subAdv("charged")];
+  const rcm = [await subIpc("reverse"), await subAdv("reverse")];
+  const sum2 = (xs: { a: string; v: string }[]) => ({ a: xs.reduce((s, x) => s + h(x.a), 0), v: xs.reduce((s, x) => s + h(x.v), 0) });
+  const sub = sum2(subs);
+  const rc = sum2(rcm);
 
   const S = doc("S", null, false); const Sc = doc("S", null, true);
   const Zd = doc("Z", false, false); const Zdc = doc("Z", false, true);
@@ -215,7 +235,7 @@ export async function vatReturn(db: Db, from: string, to: string) {
   const E = doc("E", null, false); const Ec = doc("E", null, true);
   const box = (no: number, label: string, amount: number, adjustment: number, vat: number | null) => ({ no, label, amount: r(amount), adjustment: r(adjustment), vat: vat === null ? null : r(vat) });
   const sales = [
-    box(1, "المبيعات الخاضعة للنسبة الأساسية", h(pos.a) + S.a, -(h(posRefund.a) + Sc.a), h(pos.v) + S.v - h(posRefund.v) - Sc.v),
+    box(1, "المبيعات الخاضعة للنسبة الأساسية", h(pos.a) + S.a, -(h(posRefund.a) + Sc.a + h(applied.a)), h(pos.v) + S.v - h(posRefund.v) - Sc.v - h(applied.v)),
     box(2, "المبيعات للمواطنين (الخدمات الصحية الخاصة / التعليم الأهلي / المسكن الأول)", 0, 0, 0),
     box(3, "المبيعات المحلية الخاضعة للنسبة الصفرية", Zd.a, -Zdc.a, null),
     box(4, "الصادرات", Zx.a, -Zxc.a, null),
@@ -223,20 +243,22 @@ export async function vatReturn(db: Db, from: string, to: string) {
   ];
   const salesTotal = box(6, "إجمالي المبيعات", sales.reduce((s, b) => s + h(b.amount), 0), sales.reduce((s, b) => s + h(b.adjustment), 0), sales.reduce((s, b) => s + h(b.vat ?? 0), 0));
   const buys = [
-    box(7, "المشتريات الخاضعة للنسبة الأساسية", h(purchases.a) + h(expenses.a), -h(returns.a), h(purchases.v) + h(expenses.v) - h(returns.v)),
+    box(7, "المشتريات الخاضعة للنسبة الأساسية", h(purchases.a) + h(expenses.a) + sub.a, -h(returns.a), h(purchases.v) + h(expenses.v) + sub.v - h(returns.v)),
     box(8, "الاستيرادات الخاضعة لضريبة القيمة المضافة التي تدفع في الجمارك", 0, 0, 0),
-    box(9, "الاستيرادات الخاضعة للضريبة وتطبق عليها آلية الاحتساب العكسي", 0, 0, 0),
+    box(9, "الاستيرادات الخاضعة للضريبة وتطبق عليها آلية الاحتساب العكسي", rc.a, 0, rc.v),
     box(10, "المشتريات الخاضعة للنسبة الصفرية", 0, 0, null),
     box(11, "المشتريات المعفاة", 0, 0, null),
   ];
   const buysTotal = box(12, "إجمالي المشتريات", buys.reduce((s, b) => s + h(b.amount), 0), buys.reduce((s, b) => s + h(b.adjustment), 0), buys.reduce((s, b) => s + h(b.vat ?? 0), 0));
-  const due = h(salesTotal.vat ?? 0) - h(buysTotal.vat ?? 0);
+  // Reverse-charged VAT is due as output and deducted as input (box 9): no net effect when fully deductible.
+  const due = h(salesTotal.vat ?? 0) + rc.v - h(buysTotal.vat ?? 0);
   return {
     from, to, sales, salesTotal, purchases: buys, purchasesTotal: buysTotal,
     vatDue: r(due),
     notes: [
       "البنود 13 إلى 16 (إجمالي الضريبة المستحقة، التصحيحات من الفترات السابقة، الرصيد الدائن المرحّل، صافي الضريبة) تُستكمل في بوابة الزكاة والضريبة.",
       "المشتريات من موردين غير مسجلين في ضريبة القيمة المضافة لا تظهر في الإقرار.",
+      "ضريبة الاحتساب العكسي (البند 9) تُستحق مخرجاتٍ وتُخصم مدخلاتٍ بالمبلغ نفسه، فصافي أثرها صفر عند الخصم الكامل.",
       "هذه ورقة عمل لتعبئة الإقرار في بوابة هيئة الزكاة والضريبة والجمارك، وليست تقديماً للإقرار.",
     ],
   };

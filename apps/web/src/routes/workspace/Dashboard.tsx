@@ -13,6 +13,7 @@ import { useTablePrefs } from "../../ui/tablePrefs";
 import { Badge, PageHeader, StatCard, StatusBadge, type Hue } from "../../ui/Layout";
 import { ErrorState, Skeleton } from "../../ui/States";
 import { CHANNEL_LABELS } from "../../ui/status";
+import { ContractingDashboard } from "./ContractingDashboard";
 
 interface DailyRow { day: string; orders: number; netSales: number; vat: number; total: number; cost: number; grossProfit: number; refunds: number }
 interface Valuation { items: { locationId: string; locationName: string; items: number; value: number; belowMin: number }[]; total: number }
@@ -52,7 +53,14 @@ const CHANNEL_HUE: Record<string, Hue> = { dine_in: "indigo", takeaway: "green",
 const CYCLE: Hue[] = ["indigo", "sky", "green", "orange", "violet", "amber"];
 const initials = (name: string) => name.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("");
 
+/** Each sector has its own home: a contractor's is its contracts and IPCs, not stock and cashier sales. */
 export function DashboardPage() {
+  const { contracting, can } = useTenant();
+  // The storekeeper of a contracting workspace, without projects, sees the stock home instead.
+  return contracting && can("projects.view") ? <ContractingDashboard /> : <OperationsDashboard />;
+}
+
+function OperationsDashboard() {
   const { tenantId, can } = useTenant();
   const me = useMe();
   const today = isoDay();

@@ -139,7 +139,7 @@ export function NewPurchasePage() {
         actions={<Link to={`/w/${tenantId}/purchases`} className="btn btn-ghost"><ArrowRight aria-hidden="true" />رجوع للقائمة</Link>} />
       {(noSuppliers || noLocations) && (
         <EmptyState title="تحتاج مورداً وموقعاً أولاً" action={<div className="row">{noSuppliers && <Link className="btn btn-secondary" to={`/w/${tenantId}/suppliers`}>إضافة مورد</Link>}{noLocations && <Link className="btn btn-secondary" to={`/w/${tenantId}/locations`}>إضافة موقع</Link>}</div>}>
-          أمر الشراء يُصدر لمورد ويُستلم في مطبخ أو مستودع.
+          أمر الشراء يُصدر لمورد ويُستلم في أحد مستودعاتك أو مواقعك.
         </EmptyState>
       )}
       <section className="panel panel-pad form-section" aria-labelledby="po-head">

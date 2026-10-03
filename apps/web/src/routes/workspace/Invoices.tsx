@@ -78,7 +78,7 @@ export function InvoicesPage() {
   const add = can("acc_invoices.create") && writable && <Link to={`/w/${tenantId}/accounting/invoices/new`} className="btn btn-primary"><Plus aria-hidden="true" />فاتورة جديدة</Link>;
   return (
     <div className="page">
-      <PageHeader eyebrow="الحسابات" title="الفواتير الضريبية" description="فواتير البيع خارج الكاشير (لمنشأة أو مبسطة) وإشعاراتها. الفاتورة لا تُعدَّل ولا تُحذف بعد الإصدار؛ التصحيح بإشعار دائن أو مدين." actions={add} />
+      <PageHeader eyebrow="الحسابات" title="الفواتير الضريبية" description="فواتير البيع (لمنشأة أو مبسطة) وإشعاراتها، ومنها فواتير المستخلصات. الفاتورة لا تُعدَّل ولا تُحذف بعد الإصدار؛ التصحيح بإشعار دائن أو مدين." actions={add} />
       <section className="panel">
         <DataTable caption="الفواتير الضريبية" query={list} rowKey={(r) => r.id} onPageChange={setPage}
           filtered={Boolean(kind || unpaid || debounced)} onClearFilters={() => { setKind(""); setUnpaid(false); setQ(""); setPage(1); }}
@@ -88,7 +88,7 @@ export function InvoicesPage() {
             <SearchInput placeholder="ابحث برقم الفاتورة أو اسم العميل" value={q} onChange={setQ} />
           </>}
           onRowClick={(r) => navigate({ to: `/w/${tenantId}/accounting/invoices/${r.id}` })}
-          empty={{ title: "لا توجد فواتير بعد", body: "أصدر فاتورة ضريبية لعميل منشأة، أو فاتورة مبسطة لبيع خارج الكاشير.", action: add || undefined }}
+          empty={{ title: "لا توجد فواتير بعد", body: "أصدر فاتورة ضريبية لعميل منشأة، أو فاتورة مبسطة لفرد.", action: add || undefined }}
           columns={[
             { key: "n", header: "الرقم", cell: (r) => <Link to={`/w/${tenantId}/accounting/invoices/${r.id}`} className="num">{r.number}</Link> },
             { key: "d", header: "التاريخ", cell: (r) => day(r.issueDate) },

@@ -17,7 +17,7 @@ export function useTenant() {
   const writable = Boolean(data?.operational && !data?.readOnlySupport);
   // The business decides a few words and fields (a factory's "items" are a restaurant's "ingredients").
   const sector = data?.tenant.sector ?? "restaurants";
-  return { tenantId, ctx: data, can, writable, sector, factory: sector === "manufacturing" };
+  return { tenantId, ctx: data, can, writable, sector, factory: sector === "manufacturing", restaurant: sector === "restaurants", contracting: sector === "contracting" };
 }
 
 /** Invalidate every cached query of this tenant under a prefix, e.g. ["ingredients"]. */

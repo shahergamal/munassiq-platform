@@ -46,7 +46,7 @@ const SOURCE_LABEL: Record<string, string> = {
   manual: "قيد يدوي", opening: "قيد افتتاحي", reversal: "قيد عكسي", year_close: "إقفال السنة", vat_settlement: "تسوية الضريبة",
   pos_order: "مبيعات نقاط البيع", pos_refund: "مرتجع مبيعات", shift_close: "إغلاق شفت", purchase_receipt: "استلام مشتريات", purchase_return: "مرتجع مشتريات",
   supplier_payment: "دفعة مورد", expense: "مصروف", expense_payment: "سداد مصروف", waste: "هدر", stocktake: "تسوية جرد",
-  sales_document: "فاتورة / إشعار", customer_receipt: "سند قبض", mo_event: "أمر تشغيل", delivery: "تسليم / مرتجع عميل", maintenance: "صيانة", payroll_run: "مسير رواتب", payroll_payment: "صرف رواتب", final_settlement: "مخالصة نهاية خدمة",
+  sales_document: "فاتورة / إشعار", customer_receipt: "سند قبض", mo_event: "أمر تشغيل", delivery: "تسليم / مرتجع عميل", maintenance: "صيانة", payroll_run: "مسير رواتب", payroll_payment: "صرف رواتب", final_settlement: "مخالصة نهاية خدمة", bank_guarantee: "عمولة ضمان بنكي", sub_ipc: "مستخلص مقاول باطن", sub_advance: "دفعة مقدمة لمقاول باطن", retention_release: "إفراج عن محتجزات", contract_close: "إقفال شهري لعقد", site_issue: "صرف مواد لمشروع", equipment_timesheet: "تحميل معدات على مشروع", labor_allocation: "تحميل رواتب على المشاريع",
 };
 
 export default async function accountingRoutes(app: FastifyInstance) {

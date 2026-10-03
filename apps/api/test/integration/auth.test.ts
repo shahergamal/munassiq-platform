@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { type Actor, type App, call, nextIp, ownerPool, startApp, stopApp, uniqueEmail } from "./helpers.ts";
+import { type Actor, type App, call, comingSoonSector, nextIp, ownerPool, startApp, stopApp, uniqueEmail } from "./helpers.ts";
 
 // In development/test (no SMTP_URL) the mailer prints messages to the console; capture them to read the links.
 const mails: string[] = [];
@@ -50,8 +50,10 @@ describe("account lifecycle", () => {
     const me = ok.actor!;
 
     const sectors = await call(app, null, "GET", "/sectors");
-    assert.deepEqual(sectors.body.filter((s: { isAvailable: boolean }) => s.isAvailable).map((s: { key: string }) => s.key).sort(), ["manufacturing", "restaurants"]);
-    const unavailable = await call(app, me, "POST", "/tenants", { body: { companyName: "مقاولات", sector: "contracting", taxId: "3001234567" } });
+    assert.deepEqual(sectors.body.filter((s: { isAvailable: boolean }) => s.isAvailable).map((s: { key: string }) => s.key).sort(), ["contracting", "manufacturing", "restaurants"]);
+    const soon = await comingSoonSector();
+    const unavailable = await call(app, me, "POST", "/tenants", { body: { companyName: "قطاع قادم", sector: soon.key, taxId: "3001234567" } });
+    await soon.drop();
     assert.equal(unavailable.body.error.code, "sector_unavailable");
     const t = await call(app, me, "POST", "/tenants", { body: { companyName: "مطعم سارة", sector: "restaurants", taxId: "3001234567" } });
     assert.equal(t.status, 201);

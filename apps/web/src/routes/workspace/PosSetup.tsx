@@ -319,7 +319,7 @@ export function PlatformsPage() {
 // ── Customers ───────────────────────────────────────────────────────────────────────────────────
 
 export function CustomersPage() {
-  const { tenantId, can, writable, factory } = useTenant();
+  const { tenantId, can, writable, factory, restaurant } = useTenant();
   const invalidate = useInvalidate(tenantId);
   const toast = useToast();
   const [q, setQ] = useState("");
@@ -334,22 +334,30 @@ export function CustomersPage() {
   const add = can("customers.create") && writable && <Button variant="primary" icon={<Plus />} onClick={() => setEditing("new")}>إضافة عميل</Button>;
   return (
     <div className="page">
-      <PageHeader eyebrow="المبيعات" title="العملاء" description="العميل يُعرَّف بجواله، ويُربط بالطلب من الكاشير. يظهر هنا عدد طلباته وإنفاقه." actions={add} />
+      <PageHeader eyebrow="المبيعات" title="العملاء" actions={add}
+        description={restaurant ? "العميل يُعرَّف بجواله، ويُربط بالطلب من الكاشير. يظهر هنا عدد طلباته وإنفاقه."
+          : "الجهات والشركات التي تفوترها. الرقم الضريبي والعنوان الوطني مطلوبان لفاتورتها الضريبية."} />
       <section className="panel">
         <DataTable caption="العملاء" prefs={prefs} toolbar={<SearchInput placeholder="ابحث بالاسم أو الجوال" value={q} onChange={setQ} />}
           query={list} rowKey={(c) => c.id} onPageChange={setPage} filtered={Boolean(debounced)} onClearFilters={() => setQ("")}
-          onRowClick={(c) => setHistory(c)}
-          empty={{ title: "لا يوجد عملاء بعد", body: "يُضاف العميل من الكاشير عند ربطه بطلب، أو من هنا.", action: add || undefined }}
-          columns={[
+          onRowClick={restaurant ? (c) => setHistory(c) : canWrite ? (c) => setEditing(c) : undefined}
+          empty={{ title: "لا يوجد عملاء بعد", body: restaurant ? "يُضاف العميل من الكاشير عند ربطه بطلب، أو من هنا." : "أضف عميلك ببياناته الضريبية لتصدر له الفواتير.", action: add || undefined }}
+          columns={restaurant ? [
             { key: "n", sortKey: "name", header: "العميل", cell: (c) => <span className="rs-customer-cell"><span className={`avatar tone-${hueOf(c.name)}`} aria-hidden="true">{initials(c.name)}</span><strong>{c.name}</strong></span> },
             { key: "p", sortKey: "phone", header: "الجوال", cell: (c) => <span dir="ltr">{c.phone}</span> },
             { key: "o", sortKey: "ordersCount", header: "الطلبات", numeric: true, cell: (c) => integer(c.ordersCount) },
             { key: "t", sortKey: "totalSpent", header: "إجمالي الإنفاق", numeric: true, cell: (c) => money(c.totalSpent) },
             { key: "l", sortKey: "lastOrderAt", header: "آخر طلب", cell: (c) => dayTime(c.lastOrderAt) },
+          ] : [
+            { key: "n", sortKey: "name", header: "العميل", cell: (c) => <strong>{c.name}</strong> },
+            { key: "k", sortKey: false, header: "النوع", cell: (c) => c.customerType === "business" ? "منشأة" : "فرد" },
+            { key: "v", sortKey: false, header: "الرقم الضريبي", cell: (c) => c.vatNumber ? <bdi dir="ltr" className="num">{c.vatNumber}</bdi> : "—" },
+            { key: "p", sortKey: "phone", header: "الجوال", cell: (c) => <span dir="ltr">{c.phone}</span> },
           ]}
-          actions={canWrite ? (c) => <ActionMenu label={`إجراءات ${c.name}`} items={[{ label: "الطلبات", onSelect: () => setHistory(c) }, { label: "تعديل", onSelect: () => setEditing(c) }]} /> : undefined} />
+          actions={canWrite ? (c) => restaurant ? <ActionMenu label={`إجراءات ${c.name}`} items={[{ label: "الطلبات", onSelect: () => setHistory(c) }, { label: "تعديل", onSelect: () => setEditing(c) }]} />
+            : <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>تعديل</Button> : undefined} />
       </section>
-      {editing && <CustomerForm tenantId={tenantId} factory={factory} customer={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async (n) => { toast.success(`تم حفظ ${n}`); await invalidate("customers"); }} />}
+      {editing && <CustomerForm tenantId={tenantId} factory={factory} restaurant={restaurant} customer={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={async (n) => { toast.success(`تم حفظ ${n}`); await invalidate("customers"); }} />}
       {history && <CustomerHistory tenantId={tenantId} customer={history} onClose={() => setHistory(null)} />}
     </div>
   );
@@ -362,7 +370,7 @@ const B2B_KEYS = ["vatNumber", "otherIdScheme", "otherId", "street", "buildingNo
  * Add / edit a customer. The tax block (buyer of a standard B2B invoice) appears only for a business customer.
  * Exported for the invoice page, which opens it when the server says the buyer data is incomplete.
  */
-export function CustomerForm({ tenantId, customer, onClose, onSaved, notice, business, factory = false }: {
+export function CustomerForm({ tenantId, customer, onClose, onSaved, notice, business, factory = false, restaurant = false }: {
   tenantId: string; customer: Customer | null; onClose: () => void; onSaved: (name: string) => void;
   /** Why the dialog was opened (e.g. the fields a tax invoice still needs). */
   notice?: ReactNode;
@@ -370,6 +378,8 @@ export function CustomerForm({ tenantId, customer, onClose, onSaved, notice, bus
   business?: boolean;
   /** A factory sells on account: the customer's credit limit is edited here. */
   factory?: boolean;
+  /** A restaurant's customer: delivery address and allergy notes. */
+  restaurant?: boolean;
 }) {
   const form = useRef<HTMLFormElement>(null);
   const [v, setV] = useState(() => ({
@@ -463,8 +473,8 @@ export function CustomerForm({ tenantId, customer, onClose, onSaved, notice, bus
           hint="لا يُؤكَّد أمر بيع يجعل المستحق عليه مع أوامره المفتوحة أكبر من هذا. فارغ = بلا حد." />
       )}
       {factory && <PriceListField tenantId={tenantId} value={v.priceListId} onChange={(priceListId) => set({ priceListId })} />}
-      <TextField label="العنوان" optional value={v.address} onChange={(e) => set({ address: e.target.value })} hint={factory ? "عنوان التسليم." : "لطلبات التوصيل الخاص."} />
-      <TextAreaField label="ملاحظات" optional rows={2} value={v.notes} onChange={(e) => set({ notes: e.target.value })} hint="مثل: حساسية من المكسرات." />
+      <TextField label="العنوان" optional value={v.address} onChange={(e) => set({ address: e.target.value })} hint={restaurant ? "لطلبات التوصيل الخاص." : factory ? "عنوان التسليم." : undefined} />
+      <TextAreaField label="ملاحظات" optional rows={2} value={v.notes} onChange={(e) => set({ notes: e.target.value })} hint={restaurant ? "مثل: حساسية من المكسرات." : undefined} />
       <FormError error={error} />
     </Dialog>
   );

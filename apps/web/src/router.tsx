@@ -22,6 +22,13 @@ import { SalesOrderEditorPage, SalesOrderPage, SalesOrdersPage } from "./routes/
 import { MrpPage, ProductionSchedulePage } from "./routes/workspace/Planning";
 import { NcrsPage, QcPlansPage, QualityPage, TracePage } from "./routes/workspace/Quality";
 import { MachinesPage, MaintenancePage } from "./routes/workspace/Maintenance";
+import { ContractPage, IpcPage, ProjectPage, ProjectsPage } from "./routes/workspace/Contracting";
+import { RetentionPage, SubcontractorsPage } from "./routes/workspace/Subcontracting";
+import { ContractRevenuePage } from "./routes/workspace/ContractRevenue";
+import { TenderPage, TendersPage } from "./routes/workspace/Tenders";
+import { SiteMaterialsPage } from "./routes/workspace/SiteMaterials";
+import { ProjectLaborPage } from "./routes/workspace/ProjectLabor";
+import { AdminRegulatory } from "./routes/admin/AdminRegulatory";
 import { AttendancePage, EmployeePage, EmployeesPage, LeavesPage, PayrollPage, PayrollRunPage } from "./routes/workspace/Hr";
 import { OeeReport, PayrollReport, ProductionReport } from "./routes/workspace/OpsReports";
 import { BomEditorPage, BomsPage, ManufacturingOrderPage, ManufacturingOrdersPage, WorkCentersPage } from "./routes/workspace/Manufacturing";
@@ -173,6 +180,17 @@ const tree = root.addChildren([
       w("/sales/orders/$orderId/edit", "sales_orders.create", SalesOrderEditorPage),
       w("/manufacturing/mrp", "mrp.view", MrpPage),
       w("/manufacturing/schedule", "mrp.view", ProductionSchedulePage),
+      w("/contracting/projects", "projects.view", ProjectsPage),
+      w("/contracting/projects/$projectId", "projects.view", ProjectPage),
+      w("/contracting/contracts/$contractId", "contracts.view", ContractPage),
+      w("/contracting/ipcs/$ipcId", "ipcs.view", IpcPage),
+      w("/contracting/subcontractors", "subcontractors.view", SubcontractorsPage),
+      w("/contracting/retention", "retention.view", RetentionPage),
+      w("/contracting/revenue", "revenue.view", ContractRevenuePage),
+      w("/contracting/tenders", "tenders.view", TendersPage),
+      w("/contracting/site", ["site_stores.view", "equipment.view"], SiteMaterialsPage),
+      w("/contracting/labor", "labor.view", ProjectLaborPage),
+      w("/contracting/tenders/$tenderId", "tenders.view", TenderPage),
       w("/hr/employees", "employees.view", EmployeesPage),
       w("/hr/employees/$employeeId", "employees.view", EmployeePage),
       w("/hr/attendance", "attendance.view", AttendancePage),
@@ -238,6 +256,7 @@ const tree = root.addChildren([
       a("/tenants/$tenantId", AdminTenantDetail),
       a("/users", AdminUsers),
       a("/audit", AdminAudit),
+      a("/regulatory", AdminRegulatory),
       a("/waitlist", AdminWaitlist),
       a("/plans", AdminPlans),
       a("/server", AdminServerPage),

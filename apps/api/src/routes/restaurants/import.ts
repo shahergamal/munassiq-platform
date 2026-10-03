@@ -9,7 +9,7 @@ const MAX_EXPORT = 5000;
 const HEADERS = ["الاسم", "الفئة", "وحدة الأساس (رمز)", "وحدة الشراء (رمز)", "معامل التحويل (اختياري)", "نسبة الصلاحية %", "الحد الأدنى", "الباركود"];
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-function cellText(v: ExcelJS.CellValue): string {
+export function cellText(v: ExcelJS.CellValue): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "object") {
     if ("result" in v && v.result !== undefined) return String(v.result).trim();

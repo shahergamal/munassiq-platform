@@ -1,6 +1,7 @@
 import type { Db } from "../../db/pool.ts";
 import { openHr } from "../hr/seal.ts";
 import { AppError } from "../errors.ts";
+import { closeLines } from "../contracting/revenue.ts";
 import { allocateProportionally, formatMoney, parseMoney, type Halalas } from "../money.ts";
 
 /**
@@ -18,6 +19,8 @@ export type SystemKey =
   // Factories (seed_manufacturing_accounts): one inventory account per item type, work in progress, production.
   | "inventory_semi" | "inventory_finished" | "inventory_packaging" | "inventory_consumable" | "inventory_spare" | "wip"
   | "applied_overhead" | "applied_labor" | "production_variance" | "abnormal_scrap" | "withholding_payable" | "maintenance_expense" | "customer_advances"
+  | "retention_receivable" | "contract_revenue" | "bank_fees" | "retention_payable" | "subcontractor_advances" | "subcontract_cost"
+  | "contract_asset" | "contract_liability" | "onerous_provision" | "onerous_loss" | "contract_materials" | "contract_equipment" | "equipment_recovery" | "contract_labor" | "labor_allocated"
   | "salaries_expense" | "gosi_expense" | "eos_expense" | "salaries_payable" | "gosi_payable" | "eos_provision" | "employee_advances";
 
 export interface Line {
@@ -29,6 +32,9 @@ export interface Line {
   partner?: { type: "customer" | "supplier"; id: string };
   branchId?: string | null;
   costCenterId?: string | null;
+  /** Contracting dimensions: where in the project's work breakdown, and what kind of cost. */
+  wbsId?: string | null;
+  costCodeId?: string | null;
 }
 
 export interface Draft {
@@ -84,9 +90,10 @@ export async function post(db: Db, d: Draft): Promise<string | null> {
     const accountId = l.accountId ?? (l.key ? keys.get(l.key) : undefined);
     if (!accountId) throw new AppError(409, "account_missing", `الحساب «${l.key}» غير موجود في دليل الحسابات`);
     await db.query(
-      `INSERT INTO journal_lines (tenant_id, entry_id, account_id, debit, credit, memo, partner_type, partner_id, branch_id, cost_center_id)
-       VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [id, accountId, formatMoney(l.debit ?? 0), formatMoney(l.credit ?? 0), l.memo ?? null, l.partner?.type ?? null, l.partner?.id ?? null, l.branchId ?? null, l.costCenterId ?? null]);
+      `INSERT INTO journal_lines (tenant_id, entry_id, account_id, debit, credit, memo, partner_type, partner_id, branch_id, cost_center_id, wbs_id, cost_code_id)
+       VALUES (app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [id, accountId, formatMoney(l.debit ?? 0), formatMoney(l.credit ?? 0), l.memo ?? null, l.partner?.type ?? null, l.partner?.id ?? null, l.branchId ?? null, l.costCenterId ?? null,
+        l.wbsId ?? null, l.costCodeId ?? null]);
   }
   return id;
 }
@@ -365,8 +372,10 @@ export async function postStocktake(db: Db, stocktakeId: string) {
 }
 
 export async function postSalesDocument(db: Db, docId: string) {
-  const d = (await db.query<{ kind: string; doc_number: string; issue_date: string; vat: string; total: string; customer_id: string | null; payment_means: string; branch_id: string | null; ap_taxable: string; ap_vat: string }>(
-    `SELECT kind, doc_number, issue_date::text, vat::text, total::text, customer_id, payment_means, branch_id,
+  const d = (await db.query<{ kind: string; doc_number: string; issue_date: string; vat: string; total: string; customer_id: string | null; payment_means: string; branch_id: string | null;
+    ap_taxable: string; ap_vat: string; retention: string; cost_center_id: string | null }>(
+    `SELECT kind, doc_number, issue_date::text, vat::text, total::text, customer_id, payment_means, branch_id, retention_amount::text AS retention,
+            (SELECT p.cost_center_id FROM contracts c JOIN projects p ON p.id = c.project_id WHERE c.id = d.contract_id) AS cost_center_id,
             coalesce((SELECT sum(a.taxable) FROM prepayment_applications a WHERE a.invoice_id = d.id), 0)::text AS ap_taxable,
             coalesce((SELECT sum(a.vat) FROM prepayment_applications a WHERE a.invoice_id = d.id), 0)::text AS ap_vat
        FROM sales_documents d WHERE id = $1`, [docId])).rows[0];
@@ -383,11 +392,16 @@ export async function postSalesDocument(db: Db, docId: string) {
   const apTaxable = m(d.ap_taxable);
   const apVat = m(d.ap_vat);
   const side = (v: Halalas, debitWhenInvoice: boolean): Pick<Line, "debit" | "credit"> => (debitWhenInvoice !== isCredit ? { debit: v } : { credit: v });
+  // A contract's documents carry the project (its cost center) on every line; the client's retention is a separate receivable.
+  const cc = d.cost_center_id;
+  const retention = m(d.retention);
   return post(db, {
     date: d.issue_date, description: `${label} رقم ${d.doc_number}`, sourceType: "sales_document", sourceId: docId, sourceKey: `sales_document:${docId}`,
     lines: [
-      { ...counter, ...side(m(d.total), true), branchId: d.branch_id },
-      ...lines.map((l): Line => ({ accountId: l.account_id, ...side(m(l.net), false), branchId: d.branch_id })),
+      { ...counter, ...side(m(d.total) - retention, true), branchId: d.branch_id, costCenterId: cc },
+      ...(retention > 0 ? [{ key: "retention_receivable" as SystemKey, debit: retention, branchId: d.branch_id, costCenterId: cc,
+        ...(d.customer_id ? { partner: { type: "customer" as const, id: d.customer_id } } : {}) }] : []),
+      ...lines.map((l): Line => ({ accountId: l.account_id, ...side(m(l.net), false), branchId: d.branch_id, costCenterId: cc })),
       { key: "vat_output", ...side(m(d.vat), false), branchId: d.branch_id },
       ...(apTaxable + apVat > 0 ? [
         { key: "customer_advances" as SystemKey, debit: apTaxable, branchId: d.branch_id },
@@ -552,6 +566,165 @@ export async function postFinalSettlement(db: Db, id: string) {
     ] });
 }
 
+/** A bank guarantee's fee: a cost of the project (its cost center), paid from the bank or cash. */
+export async function postGuaranteeFee(db: Db, id: string) {
+  const g = (await db.query<{ fee: string; paid_from: string | null; d: string; kind: string; number: string; cc: string | null; branch_id: string | null }>(
+    `SELECT g.fee::text, g.fee_paid_from AS paid_from, g.issued_on::text AS d, g.kind, g.number, p.cost_center_id AS cc, p.branch_id
+       FROM bank_guarantees g JOIN contracts c ON c.id = g.contract_id JOIN projects p ON p.id = c.project_id WHERE g.id = $1`, [id])).rows[0];
+  if (!g || !g.paid_from || !m(g.fee)) return null;
+  return post(db, { date: g.d, description: `عمولة خطاب ضمان ${g.number}`, sourceType: "bank_guarantee", sourceId: id, sourceKey: `bank_guarantee:${id}`,
+    lines: [{ key: "bank_fees", debit: m(g.fee), branchId: g.branch_id, costCenterId: g.cc }, { key: methodAccount(g.paid_from), credit: m(g.fee), branchId: g.branch_id }] });
+}
+
+// ── Subcontractors (C4) ─────────────────────────────────────────────────────────────────────
+interface SubRow { supplier_id: string; supplier: string; cc: string | null; branch_id: string | null; sub_code: string | null; number: string }
+const subOf = async (db: Db, contractId: string) => (await db.query<SubRow>(
+  `SELECT c.supplier_id, s.name AS supplier, p.cost_center_id AS cc, p.branch_id, c.number,
+          (SELECT id FROM cost_codes WHERE code = 'SUB' AND is_active) AS sub_code
+     FROM contracts c JOIN suppliers s ON s.id = c.supplier_id JOIN projects p ON p.id = c.project_id WHERE c.id = $1`, [contractId])).rows[0];
+
+/**
+ * A subcontractor IPC with its invoice recorded: the period's cost on the project (less delay damages), its VAT as
+ * input VAT (less what the advance already carried), the advance recovered, the retention held as a liability,
+ * back-charges set off, the rest owed to the subcontractor. A non-resident's VAT is self-assessed (input = output).
+ */
+export async function postSubcontractIpc(db: Db, ipcId: string) {
+  const i = (await db.query<{ contract_id: string; number: number; d: string; current: string; retention: string; recovery: string; ld: string; vat: string; net: string;
+    rc: string; rate: string; invoice: string | null }>(
+    `SELECT i.contract_id, i.number, coalesce(i.supplier_invoice_date, i.period_to)::text AS d, i.current_gross::text AS current, i.retention_current::text AS retention,
+            i.advance_recovery::text AS recovery, i.ld_amount::text AS ld, i.vat::text, i.net_payable::text AS net, i.reverse_charge_vat::text AS rc,
+            (SELECT vat_rate_percent FROM tenant_settings)::text AS rate, i.supplier_invoice AS invoice
+       FROM ipcs i JOIN contracts c ON c.id = i.contract_id WHERE i.id = $1 AND c.role = 'SUB' AND i.status = 'invoiced'`, [ipcId])).rows[0];
+  if (!i) return null;
+  const s = (await subOf(db, i.contract_id))!;
+  const vatOf = (v: Halalas) => Math.round(v * Number(i.rate) / 100);
+  const vat = m(i.vat);
+  // Input VAT of this invoice: its VAT net of the advance's and the damages' (they carry VAT only when it is charged).
+  const inputVat = vat > 0 ? vat - vatOf(m(i.recovery)) - vatOf(m(i.ld)) : 0;
+  const partner = { type: "supplier" as const, id: s.supplier_id };
+  const dims = { branchId: s.branch_id, costCenterId: s.cc, costCodeId: s.sub_code };
+  const deductions = (await db.query<{ amount: string; description: string; cost_code_id: string | null }>(
+    "SELECT amount::text, description, cost_code_id FROM ipc_deductions WHERE ipc_id = $1", [ipcId])).rows;
+  return post(db, {
+    date: i.d, description: `مستخلص مقاول الباطن ${s.supplier} رقم ${i.number} (العقد ${s.number})${i.invoice ? `، فاتورته ${i.invoice}` : ""}`,
+    sourceType: "sub_ipc", sourceId: ipcId, sourceKey: `sub_ipc:${ipcId}`,
+    lines: [
+      { key: "subcontract_cost", debit: m(i.current) - m(i.ld), ...dims },
+      { key: "vat_input", debit: inputVat },
+      { key: "subcontractor_advances", credit: m(i.recovery), partner, branchId: s.branch_id },
+      { key: "retention_payable", credit: m(i.retention), partner, branchId: s.branch_id, costCenterId: s.cc },
+      ...deductions.map((x): Line => ({ key: "subcontract_cost", credit: m(x.amount), memo: `خصم: ${x.description}`.slice(0, 200), ...dims, costCodeId: x.cost_code_id ?? s.sub_code })),
+      { key: "ap", credit: m(i.net), partner, branchId: s.branch_id },
+      { key: "vat_input", debit: m(i.rc), memo: "احتساب عكسي: مورد غير مقيم" },
+      { key: "vat_output", credit: m(i.rc), memo: "احتساب عكسي: مورد غير مقيم" },
+    ],
+  });
+}
+
+/** An advance paid to a subcontractor: an asset recovered by its IPCs, owed until paid through supplier payments. */
+export async function postSubcontractAdvance(db: Db, id: string) {
+  const a = (await db.query<{ contract_id: string; number: number; d: string; taxable: string; vat: string; rc: string }>(
+    "SELECT contract_id, number, advance_date::text AS d, taxable::text, vat::text, reverse_charge_vat::text AS rc FROM subcontract_advances WHERE id = $1", [id])).rows[0];
+  if (!a) return null;
+  const s = (await subOf(db, a.contract_id))!;
+  const partner = { type: "supplier" as const, id: s.supplier_id };
+  return post(db, {
+    date: a.d, description: `دفعة مقدمة رقم ${a.number} لمقاول الباطن ${s.supplier} (العقد ${s.number})`, sourceType: "sub_advance", sourceId: id, sourceKey: `sub_advance:${id}`,
+    lines: [
+      { key: "subcontractor_advances", debit: m(a.taxable), partner, branchId: s.branch_id },
+      { key: "vat_input", debit: m(a.vat) + m(a.rc) },
+      { key: "vat_output", credit: m(a.rc), memo: "احتساب عكسي: مورد غير مقيم" },
+      { key: "ap", credit: m(a.taxable) + m(a.vat), partner, branchId: s.branch_id },
+    ],
+  });
+}
+
+/** Retention released: the client pays ours (MAIN), or a subcontractor's becomes payable to it (SUB). No VAT (it was invoiced in full). */
+export async function postRetentionRelease(db: Db, id: string) {
+  const r = (await db.query<{ d: string; amount: string; method: string | null; role: string; number: string; customer_id: string | null; supplier_id: string | null;
+    cc: string | null; branch_id: string | null }>(
+    `SELECT r.released_on::text AS d, r.amount::text, r.method, c.role, c.number, c.customer_id, c.supplier_id, p.cost_center_id AS cc, p.branch_id
+       FROM retention_releases r JOIN contracts c ON c.id = r.contract_id JOIN projects p ON p.id = c.project_id WHERE r.id = $1`, [id])).rows[0];
+  if (!r) return null;
+  const amount = m(r.amount);
+  const lines: Line[] = r.role === "MAIN"
+    ? [{ key: methodAccount(r.method ?? "bank_transfer"), debit: amount, branchId: r.branch_id },
+       { key: "retention_receivable", credit: amount, partner: { type: "customer", id: r.customer_id! }, branchId: r.branch_id, costCenterId: r.cc }]
+    : [{ key: "retention_payable", debit: amount, partner: { type: "supplier", id: r.supplier_id! }, branchId: r.branch_id, costCenterId: r.cc },
+       { key: "ap", credit: amount, partner: { type: "supplier", id: r.supplier_id! }, branchId: r.branch_id }];
+  return post(db, { date: r.d, description: `إفراج عن محتجزات العقد ${r.number}`, sourceType: "retention_release", sourceId: id, sourceKey: `retention_release:${id}`, lines });
+}
+
+/**
+ * A contract's monthly close (IFRS 15): the previous position and provision are undone and the new ones booked, so
+ * the ledger always carries the latest contract asset or liability and onerous provision, on the project.
+ */
+export async function postContractClose(db: Db, closeId: string) {
+  const c = (await db.query<{ contract_id: string; period: string; position: string; provision: string; number: string; cc: string | null; branch_id: string | null;
+    prev_position: string | null; prev_provision: string | null }>(
+    `SELECT x.contract_id, x.period, x.position::text, x.provision::text, k.number, p.cost_center_id AS cc, p.branch_id,
+            prev.position::text AS prev_position, prev.provision::text AS prev_provision
+       FROM contract_closes x JOIN contracts k ON k.id = x.contract_id JOIN projects p ON p.id = k.project_id
+       LEFT JOIN LATERAL (SELECT position, provision FROM contract_closes y WHERE y.contract_id = x.contract_id AND y.period < x.period ORDER BY y.period DESC LIMIT 1) prev ON true
+      WHERE x.id = $1`, [closeId])).rows[0];
+  if (!c) return null;
+  const lines = closeLines({ position: c.prev_position === null ? 0 : parseSigned(c.prev_position), provision: m(c.prev_provision) },
+    { position: parseSigned(c.position), provision: m(c.provision) })
+    .map((l): Line => ({ ...l, branchId: c.branch_id, costCenterId: c.cc }));
+  const last = new Date(Date.UTC(Number(c.period.slice(0, 4)), Number(c.period.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  return post(db, { date: last, description: `إقفال شهر ${c.period} للعقد ${c.number}: أصل/التزام العقد والعقود المثقلة`, sourceType: "contract_close", sourceId: closeId,
+    sourceKey: `contract_close:${closeId}`, lines });
+}
+/** Materials issued to a project (on its WBS element and cost code), or returned from it, at weighted-average cost. */
+export async function postSiteIssue(db: Db, id: string) {
+  const s = (await db.query<{ number: string; kind: string; d: string; cc: string | null; branch_id: string | null; wbs_id: string | null; cost_code_id: string | null; project: string }>(
+    `SELECT x.number::text, x.kind, x.issued_on::text AS d, p.cost_center_id AS cc, p.branch_id, x.wbs_id, x.cost_code_id, p.code AS project
+       FROM site_issues x JOIN projects p ON p.id = x.project_id WHERE x.id = $1`, [id])).rows[0];
+  if (!s) return null;
+  const total = m((await db.query<{ v: string }>("SELECT coalesce(sum(round(quantity * unit_cost, 2)), 0)::text AS v FROM site_issue_lines WHERE issue_id = $1", [id])).rows[0]!.v);
+  const issue = s.kind === "issue";
+  const cost: Line = { key: "contract_materials", [issue ? "debit" : "credit"]: total, branchId: s.branch_id, costCenterId: s.cc, wbsId: s.wbs_id, costCodeId: s.cost_code_id };
+  return post(db, {
+    date: s.d, description: `${issue ? "صرف" : "إرجاع"} مواد ${issue ? "إلى" : "من"} المشروع ${s.project} (سند ${s.number})`, sourceType: "site_issue", sourceId: id, sourceKey: `site_issue:${id}`,
+    lines: [cost, ...(await inventorySide(db, issue ? "site_issue" : "site_return", id, total, issue ? "credit" : "debit", s.branch_id))],
+  });
+}
+
+/** A machine's day on a project at its internal rate: cost on the project, recovered by the equipment account. */
+export async function postEquipmentTimesheet(db: Db, id: string) {
+  const t = (await db.query<{ d: string; amount: string; code: string; project: string; cc: string | null; branch_id: string | null; wbs_id: string | null; eqp: string | null }>(
+    `SELECT t.work_date::text AS d, t.amount::text, mc.code, p.code AS project, p.cost_center_id AS cc, p.branch_id, t.wbs_id,
+            (SELECT id FROM cost_codes WHERE code = 'EQP' AND is_active) AS eqp
+       FROM equipment_timesheets t JOIN machines mc ON mc.id = t.machine_id JOIN projects p ON p.id = t.project_id WHERE t.id = $1`, [id])).rows[0];
+  if (!t || !m(t.amount)) return null;
+  return post(db, {
+    date: t.d, description: `تحميل المعدة ${t.code} على المشروع ${t.project}`, sourceType: "equipment_timesheet", sourceId: id, sourceKey: `equipment_timesheet:${id}`,
+    lines: [
+      { key: "contract_equipment", debit: m(t.amount), branchId: t.branch_id, costCenterId: t.cc, wbsId: t.wbs_id, costCodeId: t.eqp },
+      { key: "equipment_recovery", credit: m(t.amount), branchId: t.branch_id },
+    ],
+  });
+}
+
+/** A payroll run's cost allocated to projects by hours: labour cost on each project, the contra account for the total. */
+export async function postLaborAllocation(db: Db, id: string) {
+  const a = (await db.query<{ period: string }>("SELECT r.period FROM labor_allocations x JOIN payroll_runs r ON r.id = x.run_id WHERE x.id = $1", [id])).rows[0];
+  if (!a) return null;
+  const rows = (await db.query<{ amount: string; cc: string | null; branch_id: string | null; lab: string | null }>(
+    `SELECT l.amount::text, p.cost_center_id AS cc, p.branch_id, (SELECT id FROM cost_codes WHERE code = 'LAB' AND is_active) AS lab
+       FROM labor_allocation_lines l JOIN projects p ON p.id = l.project_id WHERE l.allocation_id = $1 AND l.amount > 0`, [id])).rows;
+  const total = rows.reduce((s, r) => s + m(r.amount), 0);
+  const [y, mo] = a.period.split("-").map(Number) as [number, number];
+  return post(db, {
+    date: new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10), description: `تحميل رواتب ${a.period} على المشاريع`, sourceType: "labor_allocation", sourceId: id,
+    sourceKey: `labor_allocation:${id}`,
+    lines: [...rows.map((r): Line => ({ key: "contract_labor", debit: m(r.amount), branchId: r.branch_id, costCenterId: r.cc, costCodeId: r.lab })), { key: "labor_allocated", credit: total }],
+  });
+}
+
+/** Signed amounts (a contract liability is negative). */
+const parseSigned = (v: string) => (v.startsWith("-") ? -m(v.slice(1)) : m(v));
+
 /** A mirror entry with debits and credits swapped. Each entry can be reversed once (enforced by the database). */
 export async function reverse(db: Db, entryId: string, date: string, reason: string, sourceKey: string | null, idempotencyKey?: string) {
   const e = (await db.query<{ entry_number: string; description: string; source_type: string }>(
@@ -587,6 +760,17 @@ export const SOURCES: Source[] = [
   { type: "stocktake", label: "تسويات الجرد", post: postStocktake, sql: `SELECT id, (posted_at AT TIME ZONE '${RIYADH}')::date AS d FROM stocktakes WHERE status = 'posted' AND round(variance_value, 2) <> 0` },
   { type: "sales_document", label: "الفواتير والإشعارات", post: postSalesDocument, sql: "SELECT id, issue_date AS d FROM sales_documents" },
   { type: "customer_receipt", label: "سندات القبض", post: postCustomerReceipt, sql: "SELECT id, received_on AS d FROM customer_receipts" },
+  { type: "bank_guarantee", label: "عمولات الضمانات البنكية", post: postGuaranteeFee, sql: "SELECT id, issued_on AS d FROM bank_guarantees WHERE fee > 0" },
+  { type: "sub_ipc", label: "مستخلصات مقاولي الباطن", post: postSubcontractIpc,
+    sql: "SELECT i.id, coalesce(i.supplier_invoice_date, i.period_to) AS d FROM ipcs i JOIN contracts c ON c.id = i.contract_id WHERE c.role = 'SUB' AND i.status = 'invoiced'" },
+  { type: "sub_advance", label: "الدفعات المقدمة لمقاولي الباطن", post: postSubcontractAdvance, sql: "SELECT id, advance_date AS d FROM subcontract_advances" },
+  { type: "retention_release", label: "الإفراج عن المحتجزات", post: postRetentionRelease, sql: "SELECT id, released_on AS d FROM retention_releases" },
+  { type: "site_issue", label: "صرف وإرجاع مواد المشاريع", post: postSiteIssue, sql: "SELECT id, issued_on AS d FROM site_issues" },
+  { type: "equipment_timesheet", label: "تحميل المعدات على المشاريع", post: postEquipmentTimesheet, sql: "SELECT id, work_date AS d FROM equipment_timesheets WHERE amount > 0" },
+  { type: "labor_allocation", label: "تحميل الرواتب على المشاريع", post: postLaborAllocation,
+    sql: "SELECT x.id, (to_date(r.period || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date AS d FROM labor_allocations x JOIN payroll_runs r ON r.id = x.run_id WHERE x.allocated > 0" },
+  { type: "contract_close", label: "الإقفال الشهري لعقود المقاولات", post: postContractClose,
+    sql: "SELECT id, (to_date(period || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date AS d FROM contract_closes" },
   { type: "payroll_run", label: "مسيرات الرواتب", post: postPayrollRun, sql: "SELECT id, (to_date(period || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date AS d FROM payroll_runs WHERE status <> 'draft'" },
   { type: "payroll_payment", label: "صرف الرواتب", post: postPayrollPayment, sql: "SELECT id, paid_on AS d FROM payroll_runs WHERE status = 'paid'" },
   { type: "final_settlement", label: "مخالصات نهاية الخدمة", post: postFinalSettlement, sql: "SELECT id, last_day AS d FROM final_settlements" },

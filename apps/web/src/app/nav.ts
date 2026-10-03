@@ -2,7 +2,7 @@ import {
   Armchair, Calculator, Layers, LineChart, Percent, Target, ArrowLeftRight, Bike, ClipboardCheck, CookingPot, ListPlus, Split, Users, History, Landmark, PieChart, Receipt, Soup, Trash2, Undo2, Wallet,
   BarChart3, Boxes, Building2, ChefHat, Clock3, LayoutDashboard, MapPin, PackageOpen, ReceiptText, Scale,
   BookOpen, FileChartColumn, FileText, HandCoins, ListTree, NotebookPen, SlidersHorizontal, Link2, CreditCard,
-  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, type LucideIcon,
+  CalendarClock, CalendarDays, Banknote, UserCheck, IdCard, Cog, ListChecks, OctagonAlert, GitBranch, Wrench, Drill, Factory, FileCheck, Gauge, GanttChart, Radar, Handshake, Network, Tags, Globe, Settings, Server, HardDrive, ClipboardList, PackageCheck, Star, RefreshCcw, Award, ShieldCheck, ShoppingCart, Store, TabletSmartphone, TrendingUp, Truck, Warehouse, HardHat, Gavel, type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "../api/types";
 
@@ -17,12 +17,24 @@ export interface NavGroup { label: string; items: NavItem[] }
 export const NAV: NavGroup[] = [
   { label: "الرئيسية", items: [{ label: "لوحة المتابعة", to: "/w/$tenantId", icon: LayoutDashboard, permission: null }] },
   {
+    label: "المقاولات",
+    items: [
+      { label: "العطاءات والتسعير", to: "/w/$tenantId/contracting/tenders", icon: Calculator, permission: "tenders.view" },
+      { label: "المشاريع والعقود", to: "/w/$tenantId/contracting/projects", icon: HardHat, permission: "projects.view" },
+      { label: "مقاولو الباطن", to: "/w/$tenantId/contracting/subcontractors", icon: Handshake, permission: "subcontractors.view" },
+      { label: "مواد المواقع والمعدات", to: "/w/$tenantId/contracting/site", icon: Boxes, permission: "site_stores.view" },
+      { label: "العمالة على المشاريع", to: "/w/$tenantId/contracting/labor", icon: Users, permission: "labor.view" },
+      { label: "أعمار المحتجزات", to: "/w/$tenantId/contracting/retention", icon: Wallet, permission: "retention.view" },
+      { label: "الإيراد والأعمال تحت التنفيذ", to: "/w/$tenantId/contracting/revenue", icon: Scale, permission: "revenue.view" },
+    ],
+  },
+  {
     label: "البيانات الأساسية",
     items: [
-      { label: "المواد الخام", labels: { manufacturing: "الأصناف" }, to: "/w/$tenantId/ingredients", icon: PackageOpen, permission: "ingredients.view" },
+      { label: "المواد الخام", labels: { manufacturing: "الأصناف", contracting: "المواد والأصناف" }, to: "/w/$tenantId/ingredients", icon: PackageOpen, permission: "ingredients.view" },
       { label: "الموردون", to: "/w/$tenantId/suppliers", icon: Truck, permission: "suppliers.view" },
       { label: "الفروع", to: "/w/$tenantId/branches", icon: Store, permission: "branches.view" },
-      { label: "المطابخ والمستودعات", labels: { manufacturing: "المستودعات ومواقع الإنتاج" }, to: "/w/$tenantId/locations", icon: MapPin, permission: "locations.view" },
+      { label: "المطابخ والمستودعات", labels: { manufacturing: "المستودعات ومواقع الإنتاج", contracting: "المستودعات ومخازن المواقع" }, to: "/w/$tenantId/locations", icon: MapPin, permission: "locations.view" },
       { label: "وحدات القياس", to: "/w/$tenantId/units", icon: Scale, permission: "units.view" },
       { label: "الصالات والطاولات", to: "/w/$tenantId/dining", icon: Armchair, permission: "dining.view" },
       { label: "تطبيقات التوصيل", to: "/w/$tenantId/platforms", icon: Bike, permission: "platforms.view" },
@@ -43,7 +55,7 @@ export const NAV: NavGroup[] = [
       { label: "رصيد المخزون", to: "/w/$tenantId/stock", icon: Warehouse, permission: "stock.view" },
       { label: "الصلاحية والدفعات", to: "/w/$tenantId/batches", icon: CalendarClock, permission: "batches.view" },
       { label: "التحويلات بين المواقع", to: "/w/$tenantId/transfers", icon: ArrowLeftRight, permission: "transfers.view" },
-      { label: "الهدر والتلف", labels: { manufacturing: "التالف والإتلاف" }, to: "/w/$tenantId/waste", icon: Trash2, permission: "waste.view" },
+      { label: "الهدر والتلف", labels: { manufacturing: "التالف والإتلاف", contracting: "التالف والإتلاف" }, to: "/w/$tenantId/waste", icon: Trash2, permission: "waste.view" },
       { label: "الجرد الفعلي", to: "/w/$tenantId/stocktakes", icon: ClipboardCheck, permission: "stocktakes.view" },
       { label: "حركة المواد", labels: { manufacturing: "حركة الأصناف" }, to: "/w/$tenantId/movements", icon: History, permission: "movements.view" },
     ],
@@ -71,7 +83,7 @@ export const NAV: NavGroup[] = [
     label: "الصيانة",
     items: [
       { label: "أوامر الصيانة", to: "/w/$tenantId/manufacturing/maintenance", icon: Wrench, permission: "maintenance.view" },
-      { label: "الآلات وخطط الصيانة", to: "/w/$tenantId/manufacturing/machines", icon: Drill, permission: "machines.view" },
+      { label: "الآلات وخطط الصيانة", labels: { contracting: "المعدات وخطط الصيانة" }, to: "/w/$tenantId/manufacturing/machines", icon: Drill, permission: "machines.view" },
     ],
   },
   {
@@ -140,7 +152,7 @@ export const NAV: NavGroup[] = [
       { label: "تفجير تكلفة الوصفة", to: "/w/$tenantId/reports/recipe-explosion", icon: Layers, permission: "rep_recipe_explosion.view" },
       { label: "أسعار الشراء وتغيّرها", to: "/w/$tenantId/reports/purchase-prices", icon: LineChart, permission: "rep_purchase_prices.view" },
       { label: "تقييم المخزون", to: "/w/$tenantId/reports/stock-valuation", icon: Boxes, permission: "rep_stock_valuation.view" },
-      { label: "تحليل الهدر", to: "/w/$tenantId/reports/waste-analysis", icon: PieChart, permission: "rep_waste.view" },
+      { label: "تحليل الهدر", labels: { manufacturing: "تحليل التالف", contracting: "تحليل التالف" }, to: "/w/$tenantId/reports/waste-analysis", icon: PieChart, permission: "rep_waste.view" },
       { label: "انحرافات الجرد", to: "/w/$tenantId/reports/stock-variance", icon: Scale, permission: "rep_stock_variance.view" },
       { label: "المصروفات", to: "/w/$tenantId/reports/expenses", icon: Receipt, permission: "rep_expenses.view" },
       { label: "مطابقة فواتير الموردين", to: "/w/$tenantId/reports/purchase-matching", icon: FileCheck, permission: "rep_purchase_match.view" },
@@ -174,6 +186,7 @@ export const ADMIN_NAV: { label: string; items: { label: string; to: string; ico
     { label: "الباقات", to: "/admin/plans", icon: Boxes },
     { label: "القطاعات", to: "/admin/sectors", icon: Layers },
     { label: "الأدوار والصلاحيات", to: "/admin/roles", icon: ShieldCheck },
+    { label: "القيم التنظيمية للمقاولات", to: "/admin/regulatory", icon: Gavel },
     { label: "الصفحة العامة", to: "/admin/landing", icon: Globe },
   ] },
   { label: "التقارير والمتابعة", items: [

@@ -3,7 +3,7 @@ import { after, before, describe, it } from "node:test";
 import type { FastifyRequest } from "fastify";
 import type { Db } from "../../src/db/pool.ts";
 import { createTenant as createTenantRecord, defaultGeneralSettings } from "../../src/lib/tenancy.ts";
-import { type Actor, type App, addMember, call, createTenant, createUser, expectStatus, ownerPool, startApp, stopApp } from "./helpers.ts";
+import { type Actor, type App, addMember, call, comingSoonSector, createTenant, createUser, expectStatus, ownerPool, startApp, stopApp } from "./helpers.ts";
 
 // Unique per run: the shared test database keeps every run's workspaces, and the admin lists are paginated.
 const NAME = `مطعم عمليات الإدارة ${Math.random().toString(36).slice(2, 8)}`;
@@ -18,13 +18,15 @@ describe("admin operations: subscriptions, sectors, usage, reports, settings, cr
   let owner: Actor;
   let stranger: Actor;
   let tenant: string;
+  let soon: Awaited<ReturnType<typeof comingSoonSector>>;
 
   before(async () => {
+    soon = await comingSoonSector();
     app = await startApp();
     [admin, owner, stranger] = await Promise.all([createUser({ admin: true }), createUser({ name: "مالك الاختبار" }), createUser()]);
     tenant = await createTenant(app, owner, NAME);
   });
-  after(() => stopApp(app));
+  after(async () => { await soon.drop(); await stopApp(app); });
 
   it("every endpoint is platform-admin only", async () => {
     for (const url of ["/admin/subscriptions", "/admin/sectors", "/admin/usage", "/admin/reports/financial", "/admin/reports/operations", "/admin/settings"]) {
@@ -47,9 +49,9 @@ describe("admin operations: subscriptions, sectors, usage, reports, settings, cr
   it("sectors show real availability, tenant and waitlist counts", async () => {
     const r = await call(app, admin, "GET", "/admin/sectors");
     const restaurants = r.body.items.find((x: { key: string }) => x.key === "restaurants");
-    const contracting = r.body.items.find((x: { key: string }) => x.key === "contracting");
+    const coming = r.body.items.find((x: { key: string }) => x.key === soon.key);
     assert.equal(restaurants.isAvailable, true);
-    assert.equal(contracting.isAvailable, false);
+    assert.equal(coming.isAvailable, false);
     assert.ok(restaurants.activeTenants >= 1);
   });
 
@@ -112,7 +114,7 @@ describe("admin operations: subscriptions, sectors, usage, reports, settings, cr
     expectStatus(factory, 201, "manufacturing");
     const factoryAudit = await ownerPool.query("SELECT meta FROM audit_log WHERE action = 'tenant.created' AND entity_id = $1", [factory.body.id]);
     assert.equal(factoryAudit.rows[0].meta.pilot, false, "not a pilot once the sector is open");
-    expectStatus(await call(app, admin, "POST", "/admin/tenants", { body: { ownerEmail: newOwner.email, companyName: "مقاول", sector: "contracting", taxId: "3001112225" } }), 422, "no plans");
+    expectStatus(await call(app, admin, "POST", "/admin/tenants", { body: { ownerEmail: newOwner.email, companyName: "قادم", sector: soon.key, taxId: "3001112225" } }), 422, "no plans");
     const audit = await ownerPool.query("SELECT meta FROM audit_log WHERE action = 'tenant.created' AND entity_id = $1", [paid.body.id]);
     assert.equal(audit.rows[0].meta.byAdmin, true);
   });

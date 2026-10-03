@@ -244,4 +244,14 @@ export async function setSubscriptionStatus(tenant: string, status: "trial" | "a
 }
 
 /** Today's date in Riyadh (YYYY-MM-DD), the zone the API uses for business dates. */
+/** A sector that is not on sale yet (every real sector is open now): created for one test file, removed with drop(). */
+export async function comingSoonSector(): Promise<{ key: string; drop: () => Promise<void> }> {
+  const key = `soon_${randomUUID().slice(0, 8)}`;
+  await ownerPool.query("INSERT INTO sectors (key, name_ar, is_available) VALUES ($1, 'قطاع قادم (اختبار)', false)", [key]);
+  return { key, drop: async () => {
+    await ownerPool.query("DELETE FROM waitlist WHERE sector = $1", [key]);
+    await ownerPool.query("DELETE FROM sectors WHERE key = $1", [key]);
+  } };
+}
+
 export const isoToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh" }).format(new Date());

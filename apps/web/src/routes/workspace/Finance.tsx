@@ -235,7 +235,7 @@ export function SupplierStatementPage() {
     queryFn: () => api<Statement>("GET", `/t/suppliers/${supplierId}/statement`, { tenant: tenantId, query: { from, to } }) });
   if (s.isError) return <div className="page"><ErrorState error={s.error} onRetry={() => s.refetch()} /></div>;
   const d = s.data;
-  const prefix: Record<string, string> = { purchase: "GRN-", return: "RT-", payment: "PY-" };
+  const prefix: Record<string, string> = { purchase: "GRN-", return: "RT-", payment: "PY-", sub_ipc: "IPC-", sub_advance: "ADV-", retention_release: "" };
   return (
     <div className="page">
       <PageHeader eyebrow="كشف حساب مورد" title={d?.supplier.name ?? "…"} description={`من ${day(from)} إلى ${day(to)}`}
@@ -265,7 +265,7 @@ export function SupplierStatementPage() {
                     <tr>
                       <td>{day(l.d)}</td>
                       <td>{LEDGER_KIND_LABELS[l.kind]}{l.note && <span className="muted"> · {l.note}</span>}</td>
-                      <td>{l.kind === "purchase" ? <Link to={`/w/${tenantId}/goods-receipts/${l.refId}`} className="num">{prefix[l.kind]}{l.refNumber}</Link> : <span className="num">{prefix[l.kind]}{l.refNumber}</span>}</td>
+                      <td>{l.kind === "purchase" ? <Link to={`/w/${tenantId}/goods-receipts/${l.refId}`} className="num">{prefix[l.kind]}{l.refNumber}</Link> : <span className="num">{prefix[l.kind]}{l.refNumber || ""}</span>}</td>
                       <td className="end num">{l.debit ? money(l.debit) : "—"}</td>
                       <td className="end num">{l.credit ? money(l.credit) : "—"}</td>
                       <td className="end num">{money(l.balance)}</td>

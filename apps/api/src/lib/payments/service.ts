@@ -67,7 +67,7 @@ export async function invoiceBalance(db: Db, documentId: string) {
     `SELECT d.doc_number, d.kind, d.payment_means, d.customer_id, d.invoice_type,
             (d.total - coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'credit_note'), 0)
                      + coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'debit_note'), 0)
-                     - d.prepaid_amount - coalesce((SELECT sum(r.amount) FROM customer_receipts r WHERE r.document_id = d.id), 0))::text AS balance
+                     - d.prepaid_amount - d.retention_amount - coalesce((SELECT sum(r.amount) FROM customer_receipts r WHERE r.document_id = d.id), 0))::text AS balance
        FROM sales_documents d WHERE d.id = $1`, [documentId])).rows[0];
   return d ? { ...d, balance: parseMoney(d.balance) } : null;
 }

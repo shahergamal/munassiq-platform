@@ -22,14 +22,16 @@ export function useUnits(tenantId: string) {
 
 /** A factory calls them items (raw materials, semi-finished, finished products…); a restaurant, ingredients. */
 function useWords() {
-  const { factory } = useTenant();
+  const { factory, contracting } = useTenant();
   return factory
     ? { title: "الأصناف", one: "الصنف", a: "صنف", add: "إضافة صنف", intro: "الخامات ونصف المصنّع والمنتج التام ومواد التعبئة وقطع الغيار. كل نوع يُقيَّم في حساب مخزونه." }
-    : { title: "المواد الخام", one: "المادة", a: "مادة", add: "إضافة مادة", intro: "" };
+    : contracting
+      ? { title: "المواد والأصناف", one: "المادة", a: "مادة", add: "إضافة مادة", intro: "مواد البناء والمستهلكات وقطع غيار المعدات، تُستلم في المستودع أو مخزن الموقع وتُصرف على المشاريع." }
+      : { title: "المواد الخام", one: "المادة", a: "مادة", add: "إضافة مادة", intro: "" };
 }
 
 export function IngredientsPage() {
-  const { tenantId, can, writable, factory } = useTenant();
+  const { tenantId, can, writable, factory, contracting, restaurant } = useTenant();
   const w = useWords();
   const invalidate = useInvalidate(tenantId);
   const toast = useToast();
@@ -80,7 +82,7 @@ export function IngredientsPage() {
       await invalidate("ingredients");
     } catch (err) {
       setDelError(err instanceof ApiError && err.code === "reference_conflict"
-        ? (factory ? "الصنف مستخدم في مشتريات أو حركات مخزون، لذا لا يمكن حذفه. أوقفه بدلاً من ذلك ليختفي من الاختيارات."
+        ? (factory || contracting ? "الصنف مستخدم في مشتريات أو حركات مخزون، لذا لا يمكن حذفه. أوقفه بدلاً من ذلك ليختفي من الاختيارات."
           : "المادة مستخدمة في وصفات أو مشتريات أو حركات مخزون، لذا لا يمكن حذفها. أوقفها بدلاً من ذلك لتختفي من الاختيارات.")
         : (err as Error).message);
     } finally { setDelBusy(false); }
@@ -97,7 +99,7 @@ export function IngredientsPage() {
   return (
     <div className="page">
       <PageHeader eyebrow="البيانات الأساسية" title={w.title}
-        description={factory ? `${w.intro} الرصيد ومتوسط التكلفة المرجح يُحسبان في الخادم ولا يُعدَّلان يدوياً.` : "الرصيد ومتوسط التكلفة المرجح يُحسبان في الخادم من الاستلامات والمبيعات، ولا يُعدَّلان يدوياً."}
+        description={factory || contracting ? `${w.intro} الرصيد ومتوسط التكلفة المرجح يُحسبان في الخادم ولا يُعدَّلان يدوياً.` : "الرصيد ومتوسط التكلفة المرجح يُحسبان في الخادم من الاستلامات والمبيعات، ولا يُعدَّلان يدوياً."}
         actions={<>
           {can("ingredients.export") && <Button icon={<Download />} onClick={() => void doExport()} loading={exporting} loadingText="جارٍ التجهيز…">تصدير Excel</Button>}
           {canImport && <Button icon={<Upload />} onClick={() => setImportOpen(true)}>استيراد من Excel</Button>}
@@ -132,8 +134,8 @@ export function IngredientsPage() {
           onClearFilters={() => { setQ(""); setCategory(""); setStock(""); setType(""); setActive("true"); }}
           onPageChange={setPage}
           onRowClick={canEdit ? (r) => setEditing(r) : undefined}
-          empty={{ title: factory ? "لا توجد أصناف بعد" : "لا توجد مواد خام بعد",
-            body: factory ? "ابدأ بالخامات التي تشتريها، ثم المنتجات التي تصنعها. يمكنك استيراد القائمة كاملة من Excel." : "أضف موادك واحدة واحدة، أو نزّل قالب Excel واستورد القائمة كاملة مرة واحدة.",
+          empty={{ title: factory ? "لا توجد أصناف بعد" : contracting ? "لا توجد مواد بعد" : "لا توجد مواد خام بعد",
+            body: factory ? "ابدأ بالخامات التي تشتريها، ثم المنتجات التي تصنعها. يمكنك استيراد القائمة كاملة من Excel." : contracting ? "أضف مواد البناء التي تشتريها (أسمنت، حديد، بلوك…)، أو استورد القائمة من Excel." : "أضف موادك واحدة واحدة، أو نزّل قالب Excel واستورد القائمة كاملة مرة واحدة.",
             action: canCreate ? <Button variant="primary" icon={<Plus />} onClick={() => setEditing("new")}>{w.add}</Button> : undefined }}
           columns={[
             { key: "name", sortKey: "name", header: factory ? "الصنف" : "المادة", cell: (r) => (
@@ -150,7 +152,7 @@ export function IngredientsPage() {
               </span>
             ) },
             { key: "avg", sortKey: "avgCost", header: "متوسط التكلفة المرجح", numeric: true, cell: (r) => (r.avgCost ? <>{cost(r.avgCost)} / {r.baseUnit}</> : <span className="muted">لم تُشترَ بعد</span>) },
-            ...(factory ? [] : [{ key: "yield", sortKey: "yieldPercentage", header: "نسبة الاستفادة", numeric: true, cell: (r: Ingredient) => percent(r.yieldPercentage) }]),
+            ...(!restaurant ? [] : [{ key: "yield", sortKey: "yieldPercentage", header: "نسبة الاستفادة", numeric: true, cell: (r: Ingredient) => percent(r.yieldPercentage) }]),
             { key: "status", sortKey: "isActive", header: "الحالة", cell: (r) => <StatusBadge kind="active" value={r.isActive} /> },
           ]}
           actions={canEdit || canDelete ? (r) => (
@@ -170,7 +172,7 @@ export function IngredientsPage() {
       {importOpen && <ImportDialog tenantId={tenantId} onClose={() => setImportOpen(false)} onDone={async (n) => { setImportOpen(false); toast.success(`تم استيراد ${integer(n)} ${w.a}`); await invalidate("ingredients"); }} />}
       <ConfirmDialog open={Boolean(deleting)} onClose={() => setDeleting(null)} onConfirm={() => void confirmDelete()} busy={delBusy} error={delError}
         title={`حذف ${w.one}`} confirmLabel={`حذف ${w.one} نهائياً`}
-        message={factory
+        message={factory || contracting
           ? <>سيُحذف الصنف <strong>«{deleting?.name}»</strong> ({deleting?.sku}) نهائياً. الأصناف التي لها حركات مخزون لا تُحذف، بل توقف.</>
           : <>ستُحذف المادة <strong>«{deleting?.name}»</strong> ({deleting?.sku}) نهائياً. المواد التي لها وصفات أو حركات مخزون لا تُحذف، بل توقف.</>} />
     </div>
@@ -178,7 +180,7 @@ export function IngredientsPage() {
 }
 
 function IngredientForm({ tenantId, ingredient, categories, onClose, onSaved }: { tenantId: string; ingredient: Ingredient | null; categories: string[]; onClose: () => void; onSaved: (m: string) => void }) {
-  const { factory } = useTenant();
+  const { factory, restaurant, contracting } = useTenant();
   const w = useWords();
   const units = useUnits(tenantId);
   const form = useRef<HTMLFormElement>(null);
@@ -268,7 +270,7 @@ function IngredientForm({ tenantId, ingredient, categories, onClose, onSaved }: 
         <h3>الوحدات</h3>
         <div className="form-grid">
           <SelectField label="وحدة الأساس (الرصيد والتكلفة)" required placeholder="اختر الوحدة" options={unitOptions} value={v.baseUnitId} disabled={unitLocked}
-            onChange={(e) => setV({ ...v, baseUnitId: e.target.value })} error={errors.baseUnitId} hint={unitLocked ? "لا يمكن تغييرها لأن للمادة رصيداً في المخزون." : "الوحدة الأصغر التي تستخدمها في الوصفات، مثل جرام."} />
+            onChange={(e) => setV({ ...v, baseUnitId: e.target.value })} error={errors.baseUnitId} hint={unitLocked ? "لا يمكن تغييرها لأن للمادة رصيداً في المخزون." : "الوحدة الأصغر التي تُحسب بها الكمية والتكلفة، مثل جرام أو كيلو أو حبة."} />
           <SelectField label="وحدة الشراء" required placeholder="اختر الوحدة" options={unitOptions} value={v.purchaseUnitId}
             onChange={(e) => setV({ ...v, purchaseUnitId: e.target.value })} error={errors.purchaseUnitId} />
           {needsFactor && (
@@ -281,14 +283,14 @@ function IngredientForm({ tenantId, ingredient, categories, onClose, onSaved }: 
       <div className="form-section">
         <h3>التكلفة والمخزون</h3>
         <div className="form-grid">
-          {!factory && <TextField label="نسبة الاستفادة ٪" required numeric value={v.yieldPercentage} onChange={(e) => setV({ ...v, yieldPercentage: e.target.value })} error={errors.yieldPercentage} hint="ما يبقى صالحاً بعد التنظيف والتقطيع. تُرفع تكلفة الوصفة بقدر الفاقد." />}
+          {restaurant && <TextField label="نسبة الاستفادة ٪" required numeric value={v.yieldPercentage} onChange={(e) => setV({ ...v, yieldPercentage: e.target.value })} error={errors.yieldPercentage} hint="ما يبقى صالحاً بعد التنظيف والتقطيع. تُرفع تكلفة الوصفة بقدر الفاقد." />}
           <TextField label={`الحد الأدنى للرصيد${base ? ` (${base.name})` : ""}`} required numeric value={v.minStock} onChange={(e) => setV({ ...v, minStock: e.target.value })} error={errors.minStock} hint={`عند النزول تحته يظهر ${w.one} في «تحت الحد».`} />
           {factory && <TextField label="مدة التوريد أو الإنتاج (أيام)" optional numeric value={v.leadTime} onChange={(e) => setV({ ...v, leadTime: e.target.value.replace(/\D/g, "") })} error={errors.leadTime}
             hint="تخطيط الاحتياجات يطلبه قبل موعد الحاجة بهذه المدة." />}
           <TextField label={`المستوى المستهدف (Par)${base ? ` (${base.name})` : ""}`} optional numeric value={v.parStock} onChange={(e) => setV({ ...v, parStock: e.target.value })} error={errors.parStock} hint="اقتراح الشراء يطلب ما يرفع الرصيد إليه. صفر = يستخدم ضعف الحد الأدنى." />
         </div>
       </div>
-      <div className="form-section">
+      {!contracting && <div className="form-section">
         <h3>الصلاحية والتشغيلات</h3>
         <Checkbox label={factory ? "تتبع رقم التشغيلة وتاريخ الصلاحية (كيماويات، أغذية، أدوية…)" : "تتبع تاريخ الصلاحية ورقم التشغيلة (لحوم، دواجن، ألبان، صوصات…)"} checked={v.trackExpiry} onChange={(e) => setV({ ...v, trackExpiry: e.target.checked })} />
         <div className="form-grid">
@@ -296,7 +298,7 @@ function IngredientForm({ tenantId, ingredient, categories, onClose, onSaved }: 
             hint={v.trackExpiry ? "تاريخ الانتهاء الافتراضي عند الاستلام، وصلاحية ما يُحضَّر منها. الاستلام يطلب تاريخ الانتهاء إن تركته فارغاً." : "اختياري: يُقترح تاريخ انتهاء عند الاستلام."} />
         </div>
         {v.trackExpiry && <p className="muted acc-small">يُصرف الأقرب انتهاءً أولاً تلقائياً في البيع والتحويل والهدر، وتظهر الدفعات القريبة من الانتهاء في «الصلاحية والدفعات».</p>}
-      </div>
+      </div>}
       <FormError error={error} />
     </Dialog>
   );

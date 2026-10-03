@@ -191,10 +191,12 @@ export async function catalogRoutes(app: FastifyInstance) {
     schema: z.object({
       code, name,
       branchId: z.string().uuid().nullable().optional().transform((v) => v ?? null),
-      locationType: z.enum(["kitchen", "warehouse", "store", "quarantine"]).default("kitchen"),
+      locationType: z.enum(["kitchen", "warehouse", "store", "quarantine", "site"]).default("kitchen"),
+      // A site store belongs to a project (contracting); the database requires it for type site only.
+      projectId: z.string().uuid().nullable().optional().transform((v) => v ?? null),
       isActive: z.boolean().default(true),
     }),
-    select: `id, code, name, branch_id AS "branchId", location_type AS "locationType", is_active AS "isActive"`,
+    select: `id, code, name, branch_id AS "branchId", location_type AS "locationType", project_id AS "projectId", is_active AS "isActive"`,
     search: ["name", "code"], order: "name, id",
   });
 

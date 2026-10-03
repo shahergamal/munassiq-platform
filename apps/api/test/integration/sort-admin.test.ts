@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { type Actor, type App, call, createTenant, createUser, expectStatus, ownerPool, startApp, stopApp, uniqueEmail } from "./helpers.ts";
+import { type Actor, type App, call, comingSoonSector, createTenant, createUser, expectStatus, ownerPool, startApp, stopApp, uniqueEmail } from "./helpers.ts";
 
 // The admin lists are platform-wide, so each test narrows the result to its own rows (search, tenant filter, or
 // its own e-mails) and checks their order. Every row is created so the requested order differs from the default.
@@ -13,6 +13,7 @@ describe("sorting on the platform admin lists", () => {
   const users: Record<string, Actor> = {};
   const waitEmails: Record<string, string> = {};
   let auditTenant: string;
+  let soon: Awaited<ReturnType<typeof comingSoonSector>>;
 
   before(async () => {
     app = await startApp();
@@ -25,10 +26,11 @@ describe("sorting on the platform admin lists", () => {
     expectStatus(await call(app, admin, "POST", `/admin/tenants/${tenants["أ"]}/status`, { body: { status: "blocked", reason: "اختبار الترتيب" } }), 200, "block");
     expectStatus(await call(app, admin, "POST", `/admin/users/${users["أ"]!.id}/suspend`, { body: { reason: "اختبار الترتيب" } }), 200, "suspend");
 
-    // Manufacturing opened after these sign-ups, so its entries are written as they were then; contracting is still waited for.
-    for (const [letter, sector] of [["ب", "manufacturing"], ["أ", "contracting"], ["ج", "manufacturing"]] as const) {
+    // Open sectors take no new waitlist entries, so theirs are written as they were before opening; the other one is still waited for.
+    soon = await comingSoonSector();
+    for (const [letter, sector] of [["ب", "manufacturing"], ["أ", soon.key], ["ج", "manufacturing"]] as const) {
       waitEmails[letter] = uniqueEmail(tag);
-      if (sector === "contracting") expectStatus(await call(app, null, "POST", "/waitlist", { body: { email: waitEmails[letter], companyName: `${tag} ${letter}`, sector } }), 202, "waitlist");
+      if (sector === soon.key) expectStatus(await call(app, null, "POST", "/waitlist", { body: { email: waitEmails[letter], companyName: `${tag} ${letter}`, sector } }), 202, "waitlist");
       else await ownerPool.query("INSERT INTO waitlist (email, company_name, sector) VALUES ($1, $2, $3)", [waitEmails[letter], `${tag} ${letter}`, sector]);
     }
 
@@ -36,7 +38,7 @@ describe("sorting on the platform admin lists", () => {
     expectStatus(await call(app, admin, "PUT", `/admin/tenants/${auditTenant}/limits`, { body: { branchesLimit: 2, usersLimit: null } }), 200, "limits");
     expectStatus(await call(app, admin, "POST", `/admin/tenants/${auditTenant}/verify-tax-id`), 200, "verify");
   });
-  after(() => stopApp(app));
+  after(async () => { await soon.drop(); await stopApp(app); });
 
   const suffix = (items: { companyName?: string; fullName?: string }[]) => items.map((i) => (i.companyName ?? i.fullName ?? "").slice(tag.length + 1));
   const get = async (url: string) => {
@@ -85,7 +87,7 @@ describe("sorting on the platform admin lists", () => {
   it("waitlist: sorts by company, then by sector and company", async () => {
     assert.deepEqual(await waitNames(""), ["ج", "أ", "ب"]);
     assert.deepEqual(await waitNames("companyName:asc"), ["أ", "ب", "ج"]);
-    assert.deepEqual(await waitNames("sector:asc,companyName:asc"), ["أ", "ب", "ج"]);
+    assert.deepEqual(await waitNames("sector:asc,companyName:asc"), ["ب", "ج", "أ"], "manufacturing (ب, ج) before soon_… (أ)");
   });
 
   it("every column the screens offer is a real output column", async () => {

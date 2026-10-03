@@ -11,6 +11,15 @@ import adminRoutes from "./routes/admin.ts";
 import { adminLandingRoutes, publicLandingRoutes } from "./routes/landing.ts";
 import paymentsPublicRoutes from "./routes/paymentsPublic.ts";
 import adminServerRoutes from "./routes/adminServer.ts";
+import adminRegulatoryRoutes from "./routes/adminRegulatory.ts";
+import contractingProjectRoutes from "./routes/contracting/projects.ts";
+import contractingIpcRoutes from "./routes/contracting/ipcs.ts";
+import contractingSubcontractorRoutes from "./routes/contracting/subcontractors.ts";
+import contractingRevenueRoutes from "./routes/contracting/revenue.ts";
+import contractingTenderRoutes from "./routes/contracting/tenders.ts";
+import contractingSiteRoutes from "./routes/contracting/site.ts";
+import contractingDashboardRoutes from "./routes/contracting/dashboard.ts";
+import contractingLaborRoutes from "./routes/contracting/labor.ts";
 import billingRoutes from "./routes/billing.ts";
 import { recordSecurityEvent } from "./lib/ops/service.ts";
 import paymentsRoutes from "./routes/restaurants/payments.ts";
@@ -123,6 +132,7 @@ export async function buildApp() {
   await app.register(adminOpsRoutes, { prefix: `${v1}/admin` });
   await app.register(adminAssistantRoutes, { prefix: `${v1}/admin` });
   await app.register(adminServerRoutes, { prefix: `${v1}/admin` });
+  await app.register(adminRegulatoryRoutes, { prefix: `${v1}/admin` });
   await app.register(publicLandingRoutes, { prefix: v1 });
   await app.register(paymentsPublicRoutes, { prefix: v1 });
   await app.register(async (t) => {
@@ -137,6 +147,14 @@ export async function buildApp() {
     await t.register(hrTimeRoutes);
     await t.register(payrollRoutes);
     await t.register(operationsReportRoutes);
+    await t.register(contractingProjectRoutes);
+    await t.register(contractingIpcRoutes);
+    await t.register(contractingSubcontractorRoutes);
+    await t.register(contractingRevenueRoutes);
+    await t.register(contractingTenderRoutes);
+    await t.register(contractingSiteRoutes);
+    await t.register(contractingDashboardRoutes);
+    await t.register(contractingLaborRoutes);
     await t.register(salesOrderRoutes);
     await t.register(priceListRoutes);
     await t.register(importRoutes);

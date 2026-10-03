@@ -137,14 +137,14 @@ export async function advancesAccount(db: Db): Promise<string> {
 }
 
 /** What is left of each prepayment on an order (taxable and VAT, halalas): not deducted by an invoice nor refunded by a credit note. */
-export async function unappliedPrepayments(db: Db, orderId: string) {
+export async function unappliedPrepayments(db: Db, sourceId: string, by: "order" | "contract" = "order") {
   return (await db.query<{ id: string; doc_number: string; issued_at: Date; rate: string; taxable: string; vat: string }>(
     `SELECT p.id, p.doc_number, p.issued_at, (SELECT max(l.vat_rate) FROM sales_document_lines l WHERE l.document_id = p.id)::text AS rate,
             (p.taxable - coalesce((SELECT sum(a.taxable) FROM prepayment_applications a WHERE a.prepayment_id = p.id), 0)
                        - coalesce((SELECT sum(n.taxable) FROM sales_documents n WHERE n.original_id = p.id AND n.kind = 'credit_note'), 0))::text AS taxable,
             (p.vat - coalesce((SELECT sum(a.vat) FROM prepayment_applications a WHERE a.prepayment_id = p.id), 0)
                    - coalesce((SELECT sum(n.vat) FROM sales_documents n WHERE n.original_id = p.id AND n.kind = 'credit_note'), 0))::text AS vat
-       FROM sales_documents p WHERE p.sales_order_id = $1 AND p.kind = 'prepayment' ORDER BY p.issued_at`, [orderId])).rows
+       FROM sales_documents p WHERE ${by === "order" ? "p.sales_order_id" : "p.contract_id"} = $1 AND p.kind = 'prepayment' ORDER BY p.issued_at`, [sourceId])).rows
     .map((r) => ({ id: r.id, number: r.doc_number, issuedAt: r.issued_at, rate: Number(r.rate ?? 15), taxable: parseMoney(r.taxable), vat: parseMoney(r.vat) }))
     .filter((r) => r.taxable + r.vat > 0);
 }
@@ -157,6 +157,12 @@ export type DocInput = Omit<z.infer<typeof docSchema>, "lines" | "kind" | "isExp
   salesOrderId?: string | null;
   /** Final invoice of a sales order: deduct the order's unapplied prepayments (up to the invoice total). */
   applyPrepayments?: boolean;
+  /** Set when the document belongs to a construction contract (its advance, or an IPC's invoice). */
+  contractId?: string | null;
+  /** Deduct at most this much of the source's advances (gross, halalas): an IPC recovers its share only. */
+  prepaymentLimit?: number;
+  /** Retained by the client on this invoice (halalas, excl. VAT): booked to retention receivable, VAT unaffected. */
+  retentionAmount?: number;
   lines: (z.infer<typeof docSchema>["lines"][number] & { itemId?: string | null })[];
 };
 
@@ -167,7 +173,7 @@ export type DocInput = Omit<z.infer<typeof docSchema>, "lines" | "kind" | "isExp
  */
 export async function issueSalesDocument(db: Db, b: DocInput, key: string, req: FastifyRequest | null): Promise<{ id: string; number: string; replay: boolean; zatcaDocument?: string | null; prepaid?: number }> {
   if (b.kind !== "invoice" && b.kind !== "prepayment" && (!b.originalId || !b.reason || b.reason.length < 3)) throw badRequest("الإشعار يحتاج الفاتورة الأصلية وسبب الإصدار");
-  if (b.kind === "prepayment" && (!b.salesOrderId || b.paymentMeans === "credit" || b.lines.some((l) => l.vatCategory !== "S"))) {
+  if (b.kind === "prepayment" && (!(b.salesOrderId || b.contractId) || b.paymentMeans === "credit" || b.lines.some((l) => l.vatCategory !== "S"))) {
     throw badRequest("الدفعة المقدمة مبلغ مقبوض على أمر بيع بالنسبة الأساسية");
   }
   if (b.isExport && (b.invoiceType !== "standard" || b.kind === "prepayment")) throw badRequest("فاتورة التصدير فاتورة ضريبية (بين المنشآت)");
@@ -247,10 +253,11 @@ export async function issueSalesDocument(db: Db, b: DocInput, key: string, req: 
   // Final invoice: earlier advances on the order are deducted, oldest first, up to this invoice's total. A partly
   // used advance splits its remaining VAT in proportion.
   const prepayments: { id: string; number: string; issuedAt: Date; rate: number; taxable: number; vat: number }[] = [];
-  if (b.kind === "invoice" && b.applyPrepayments && b.salesOrderId) {
-    await db.query("SELECT pg_advisory_xact_lock(hashtext('so_prepayment:' || $1))", [b.salesOrderId]);
-    let room = total;
-    for (const p of await unappliedPrepayments(db, b.salesOrderId)) {
+  const prepaySource = b.salesOrderId ? { id: b.salesOrderId, by: "order" as const } : b.contractId ? { id: b.contractId, by: "contract" as const } : null;
+  if (b.kind === "invoice" && b.applyPrepayments && prepaySource) {
+    await db.query("SELECT pg_advisory_xact_lock(hashtext('so_prepayment:' || $1))", [prepaySource.id]);
+    let room = Math.min(total, b.prepaymentLimit ?? total);
+    for (const p of await unappliedPrepayments(db, prepaySource.id, prepaySource.by)) {
       if (room <= 0) break;
       const gross = Math.min(room, p.taxable + p.vat);
       const vatPart = gross === p.taxable + p.vat ? p.vat : Math.round(gross * p.vat / (p.taxable + p.vat));
@@ -290,11 +297,11 @@ export async function issueSalesDocument(db: Db, b: DocInput, key: string, req: 
   await db.query(
     `INSERT INTO sales_documents (id, uuid, tenant_id, kind, invoice_type, doc_number, customer_id, branch_id, issue_date, issued_at, supply_date, due_date, original_id, reason,
                                   payment_means, notes, subtotal, discount, taxable, vat, total, seller, buyer, qr_base64, idempotency_key, created_by, sales_order_id,
-                                  prepaid_amount, is_export)
-     VALUES ($23, $24, app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, app_user_id(), $25, $26, $27)`,
+                                  prepaid_amount, is_export, contract_id, retention_amount)
+     VALUES ($23, $24, app_tenant_id(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, app_user_id(), $25, $26, $27, $28, $29)`,
     [b.kind, b.invoiceType, number, b.customerId, b.branchId, issueDate, issuedAt, supplyDate, dueDate, b.originalId, b.reason, b.paymentMeans, b.notes,
       formatMoney(subtotal), formatMoney(discount), formatMoney(taxable), formatMoney(vat), formatMoney(total), JSON.stringify(s), customer ? JSON.stringify(buyerOf(customer)) : null, qr, key, id, uuid,
-      b.salesOrderId ?? null, formatMoney(prepaid), Boolean(b.isExport)]);
+      b.salesOrderId ?? null, formatMoney(prepaid), Boolean(b.isExport), b.contractId ?? null, formatMoney(b.retentionAmount ?? 0)]);
   for (const p of prepayments) {
     await db.query("INSERT INTO prepayment_applications (tenant_id, invoice_id, prepayment_id, taxable, vat) VALUES (app_tenant_id(), $1, $2, $3, $4)",
       [id, p.id, formatMoney(p.taxable), formatMoney(p.vat)]);
@@ -342,8 +349,8 @@ export default async function salesRoutes(app: FastifyInstance) {
                   CASE WHEN d.kind <> 'invoice' THEN NULL ELSE
                     d.total - coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'credit_note'), 0)
                             + coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'debit_note'), 0)
-                            - d.prepaid_amount
-                            - CASE WHEN d.payment_means = 'credit' THEN coalesce((SELECT sum(r.amount) FROM customer_receipts r WHERE r.document_id = d.id), 0) ELSE d.total - d.prepaid_amount END
+                            - d.prepaid_amount - d.retention_amount
+                            - CASE WHEN d.payment_means = 'credit' THEN coalesce((SELECT sum(r.amount) FROM customer_receipts r WHERE r.document_id = d.id), 0) ELSE d.total - d.prepaid_amount - d.retention_amount END
                   END::float8 AS balance
              FROM sales_documents d LEFT JOIN customers c ON c.id = d.customer_id
             WHERE ($1::text IS NULL OR d.kind = $1) AND ($2::uuid IS NULL OR d.customer_id = $2)
@@ -365,6 +372,7 @@ export default async function salesRoutes(app: FastifyInstance) {
                 d.supply_date::text AS "supplyDate", d.due_date::text AS "dueDate", d.reason, d.payment_means AS "paymentMeans", d.notes,
                 d.subtotal::float8 AS subtotal, d.discount::float8 AS discount, d.taxable::float8 AS taxable, d.vat::float8 AS vat, d.total::float8 AS total,
                 d.prepaid_amount::float8 AS "prepaidAmount", d.is_export AS "isExport", d.sales_order_id AS "salesOrderId",
+                d.retention_amount::float8 AS "retentionAmount", d.contract_id AS "contractId",
                 d.seller, d.buyer, d.qr_base64 AS qr, d.customer_id AS "customerId", d.original_id AS "originalId", o.doc_number AS "originalNumber", o.issue_date::text AS "originalDate"
            FROM sales_documents d LEFT JOIN sales_documents o ON o.id = d.original_id WHERE d.id = $1`, [id])).rows[0];
       if (!d) throw notFound("المستند غير موجود");
@@ -378,8 +386,9 @@ export default async function salesRoutes(app: FastifyInstance) {
       const credits = notes.filter((n) => n.kind === "credit_note").reduce((s, n) => s + cents(n.total), 0);
       const debits = notes.filter((n) => n.kind === "debit_note").reduce((s, n) => s + cents(n.total), 0);
       const prepaid = cents(d.prepaidAmount);
-      const paid = d.paymentMeans === "credit" ? receipts.reduce((s, r) => s + cents(r.amount), 0) : cents(d.total) - prepaid;
-      const balance = d.kind === "invoice" ? (cents(d.total) - credits + debits - prepaid - paid) / 100 : null;
+      const retained = cents(d.retentionAmount);
+      const paid = d.paymentMeans === "credit" ? receipts.reduce((s, r) => s + cents(r.amount), 0) : cents(d.total) - prepaid - retained;
+      const balance = d.kind === "invoice" ? (cents(d.total) - credits + debits - prepaid - retained - paid) / 100 : null;
       const prepayments = (await db.query(
         `SELECT p.id, p.doc_number AS "number", p.issue_date::text AS "issueDate", a.taxable::float8 AS taxable, a.vat::float8 AS vat
            FROM prepayment_applications a JOIN sales_documents p ON p.id = a.prepayment_id WHERE a.invoice_id = $1 ORDER BY p.issued_at`, [id])).rows;
@@ -432,7 +441,7 @@ export default async function salesRoutes(app: FastifyInstance) {
           `SELECT d.customer_id, d.kind, d.payment_means,
                   (d.total - coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'credit_note'), 0)
                            + coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'debit_note'), 0)
-                           - d.prepaid_amount - coalesce((SELECT sum(r.amount) FROM customer_receipts r WHERE r.document_id = d.id), 0))::text AS balance
+                           - d.prepaid_amount - d.retention_amount - coalesce((SELECT sum(r.amount) FROM customer_receipts r WHERE r.document_id = d.id), 0))::text AS balance
              FROM sales_documents d WHERE d.id = $1`, [b.documentId])).rows[0];
         if (!d || d.kind !== "invoice") throw notFound("الفاتورة غير موجودة");
         if (d.customer_id !== b.customerId) throw badRequest("الفاتورة لا تخص هذا العميل");

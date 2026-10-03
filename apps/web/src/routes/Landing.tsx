@@ -108,7 +108,7 @@ export function LandingPage() {
     on(); window.addEventListener("scroll", on, { passive: true });
     return () => window.removeEventListener("scroll", on);
   }, []);
-  useEffect(() => { document.title = "مُنَسِّق | تكاليف ومحاسبة وفوترة المطاعم والمصانع"; }, []);
+  useEffect(() => { document.title = "مُنَسِّق | تكاليف ومحاسبة وفوترة المطاعم والمصانع والمقاولات"; }, []);
   useScrollMotion(q.isSuccess);
 
   if (q.isPending) return <div className="lp-loading" role="status" aria-busy="true"><Logo height={48} /><span className="sr-only">جارٍ تحميل الصفحة…</span></div>;

@@ -17,6 +17,7 @@
     "demo:seed": "node src/scripts/seed-demo.ts",
     "gen:permissions": "node src/scripts/gen-web-permissions.ts",
     "demo:factory": "node --env-file=.env src/scripts/seed-factory.ts",
+    "demo:contracting": "node --env-file=.env src/scripts/seed-contracting.ts",
     "zatca:sdk-validate": "node src/scripts/zatca-sdk-validate.ts",
     "zatca:live-check": "node src/scripts/zatca-live-check.ts",
     "load:test": "node src/scripts/load-test.ts"

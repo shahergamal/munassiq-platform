@@ -79,7 +79,7 @@ export function StockTurnoverReport() {
   const items = (r.data?.items ?? []).filter((x) => !only || (only === "dead" ? x.dead : (x.daysOnHand ?? 0) > 30));
   return (
     <div className="page">
-      <PageHeader eyebrow="التقارير" title="دوران المخزون والراكد" description="كم يوماً يكفي المخزون الحالي بمعدل الاستهلاك، وما المواد الراكدة التي تجمّد نقدك. الهدف في المطاعم: أيام قليلة للطازج، وأسابيع قليلة للجاف." />
+      <PageHeader eyebrow="التقارير" title="دوران المخزون والراكد" description="كم يوماً يكفي المخزون الحالي بمعدل الاستهلاك، وما المواد الراكدة التي تجمّد نقدك." />
       <div className="toolbar panel sr-filter-bar">
         <select className="select" aria-label="الموقع" value={loc} onChange={(e) => setLoc(e.target.value)}>
           <option value="">كل المواقع</option>{(locations.data?.items ?? []).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}

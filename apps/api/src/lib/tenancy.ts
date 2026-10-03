@@ -8,6 +8,7 @@ import { auditSystem } from "../plugins/auth.ts";
 export const MAX_OWNED_TENANTS = 3;
 const EXPENSE_CATEGORIES: Record<string, string[]> = {
   restaurants: ["الإيجار", "الرواتب والأجور", "الكهرباء والماء", "الغاز", "الصيانة", "التسويق", "النظافة والمستهلكات", "رسوم حكومية", "عمولات التوصيل", "أخرى"],
+  contracting: ["الإيجار", "الرواتب والأجور", "إيجار المعدات", "الوقود والطاقة", "التأمين", "رسوم الضمانات البنكية", "رسوم حكومية وتصاريح", "النقل", "أخرى"],
   manufacturing: ["الإيجار", "الرواتب والأجور", "الكهرباء والماء", "الوقود والطاقة", "صيانة الآلات", "النقل والشحن", "التأمين", "التسويق", "رسوم حكومية", "أخرى"],
 };
 
@@ -85,6 +86,10 @@ export async function createTenant(db: Db, req: FastifyRequest, t: NewTenant): P
   await db.query("SELECT seed_withholding_account($1)", [tenantId]);
   await db.query("SELECT seed_leave_types($1)", [tenantId]);
   if (t.sector === "manufacturing") await db.query("SELECT seed_manufacturing_accounts($1)", [tenantId]);
+  if (t.sector === "contracting") {
+    await db.query("SELECT seed_contracting_accounts($1)", [tenantId]);
+    await db.query("SELECT seed_cost_codes($1)", [tenantId]);
+  }
   await auditSystem(db, req, tenantId, "tenant.created", "tenant", tenantId, { sector: t.sector, plan: planCode, byAdmin: Boolean(t.plan), pilot: Boolean(t.pilot && !sector.rows[0].is_available) });
   return tenantId;
 }

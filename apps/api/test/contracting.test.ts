@@ -1,0 +1,169 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { computeIpc, h, type IpcTerms } from "../src/lib/contracting/ipc.ts";
+import { checkVariationCaps } from "../src/lib/contracting/variations.ts";
+
+// C3: the IPC arithmetic against the ZATCA contracting guideline's own examples (May 2026), and the Art. 67 caps.
+const terms = (t: Partial<IpcTerms> = {}): IpcTerms => ({ contractValue: h(10_000_000), retentionPct: 0, retentionCapPct: 0, advanceTaxable: 0, advanceRecovered: 0,
+  ldRatePerDay: 0, ldCapPct: null, vatRatePct: 15, ...t });
+const work = (riyals: number) => [{ kind: "boq" as const, rate: riyals, qtyToDate: 1, previousQty: 0 }];
+
+test("retention does not reduce the VAT base (guideline: 6% on 5,000,000 → VAT 750,000 in full)", () => {
+  const r = computeIpc(work(5_000_000), terms({ retentionPct: 6 }), { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: false, ldDays: 0 });
+  assert.equal(r.vat, h(750_000));
+  assert.equal(r.retention, h(300_000));
+  assert.equal(r.net, h(5_750_000 - 300_000));
+});
+
+test("delay damages as a price reduction with VAT (guideline: 8,000 × 55 days = 440,000 + 66,000)", () => {
+  const r = computeIpc(work(5_000_000), terms({ ldRatePerDay: h(8_000), ldCapPct: 10 }), { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: false, ldDays: 55 });
+  assert.deepEqual([r.ld, r.ldVat], [h(440_000), h(66_000)]);
+  assert.equal(r.net, h(5_750_000 - 506_000));
+  assert.throws(() => computeIpc(work(1), terms({ ldRatePerDay: h(100) }), { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: false, ldDays: 3 }), /ld_cap_unknown/);
+});
+
+test("the delay damages cap is cumulative", () => {
+  const r = computeIpc(work(1_000_000), terms({ ldRatePerDay: h(50_000), ldCapPct: 20 }), { previousGross: 0, retainedToDate: 0, ldToDate: h(1_900_000) }, { final: false, ldDays: 10 });
+  assert.equal(r.ld, h(100_000), "only 100,000 left under 20% of 10,000,000");
+  assert.equal(r.ldCapped, true);
+});
+
+test("advance 500,000 + 75,000 recovered in the final IPC of 972,000: 472,000 + 70,800 payable (guideline)", () => {
+  const r = computeIpc(work(972_000), terms({ contractValue: h(972_000), advanceTaxable: h(500_000) }), { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: true, ldDays: 0 });
+  assert.deepEqual([r.advanceRecovery, r.advanceRecoveryVat], [h(500_000), h(75_000)]);
+  assert.equal(r.net, h(472_000 + 70_800));
+});
+
+test("interim IPCs recover the advance pro rata, and retention stops at its cap", () => {
+  const t = terms({ advanceTaxable: h(1_000_000), retentionPct: 10, retentionCapPct: 5 });
+  const r1 = computeIpc(work(4_000_000), t, { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: false, ldDays: 0 });
+  assert.equal(r1.advanceRecovery, h(400_000), "10% of the period's work");
+  assert.equal(r1.retention, h(400_000));
+  const r2 = computeIpc(work(8_000_000), { ...t, advanceRecovered: r1.advanceRecovery }, { previousGross: h(4_000_000), retainedToDate: r1.retention, ldToDate: 0 }, { final: false, ldDays: 0 });
+  assert.equal(r2.current, h(4_000_000));
+  assert.equal(r2.retention, h(100_000), "the cap is 500,000 (5% of 10,000,000)");
+});
+
+test("variation caps (Art. 67): new items need consent and stay within 10%, total increase within 20%", () => {
+  const caps = { newItemsPct: 10, increaseConsentPct: 10, totalIncreasePct: 20, decreasePct: 20 };
+  const base = { contractValue: h(10_000_000), approved: { newItems: 0, increase: 0, decrease: 0 }, caps };
+  assert.equal(checkVariationCaps({ ...base, proposed: { newItems: h(500_000), increase: 0, decrease: 0 }, consent: false }).ok, false, "consent needed");
+  assert.equal(checkVariationCaps({ ...base, proposed: { newItems: h(500_000), increase: 0, decrease: 0 }, consent: true }).ok, true);
+  assert.equal(checkVariationCaps({ ...base, proposed: { newItems: h(1_100_000), increase: 0, decrease: 0 }, consent: true }).ok, false, "over 10%");
+  assert.equal(checkVariationCaps({ ...base, proposed: { newItems: 0, increase: h(1_500_000), decrease: 0 }, consent: false }).ok, false, "over 10% without consent");
+  const r = checkVariationCaps({ ...base, approved: { newItems: h(1_000_000), increase: h(500_000), decrease: 0 }, proposed: { newItems: 0, increase: h(600_000), decrease: 0 }, consent: true });
+  assert.equal(r.ok, false, "2.1M > 20%");
+  assert.equal(checkVariationCaps({ ...base, caps: null as never, proposed: { newItems: h(9_000_000), increase: 0, decrease: 0 }, consent: false }).ok, true, "no statutory caps (private)");
+});
+
+// C4: the subcontractor's certificate, seen from the main contractor.
+import { computeSubIpc } from "../src/lib/contracting/subIpc.ts";
+const sub = (t: Partial<Parameters<typeof computeSubIpc>[1]> = {}) => ({ ...terms({ contractValue: h(1_000_000) }), vatMode: "charged" as const, ...t });
+const none = { previousGross: 0, retainedToDate: 0, ldToDate: 0 };
+
+test("registered resident subcontractor: its VAT is our input VAT; retention and back-charges are set off", () => {
+  const r = computeSubIpc(work(1_000_000), sub({ retentionPct: 10 }), none, { final: false, ldDays: 0, deductions: [{ amount: h(20_000) }] });
+  assert.deepEqual([r.vat, r.retention, r.deductions, r.reverseChargeVat, r.net], [h(150_000), h(100_000), h(20_000), 0, h(1_030_000)]);
+});
+
+test("non-resident subcontractor: no VAT charged, reverse charge on the net supply; unregistered resident: no VAT at all", () => {
+  const r = computeSubIpc(work(500_000), sub({ vatMode: "reverse", advanceTaxable: h(100_000) }), none, { final: false, ldDays: 0, deductions: [] });
+  assert.equal(r.vat, 0);
+  assert.equal(r.advanceRecovery, h(50_000));
+  assert.equal(r.advanceRecoveryVat, 0);
+  assert.equal(r.reverseChargeVat, h(67_500), "15% of 450,000");
+  assert.equal(r.net, h(450_000));
+  const n = computeSubIpc(work(500_000), sub({ vatMode: "none" }), none, { final: false, ldDays: 0, deductions: [] });
+  assert.deepEqual([n.vat, n.reverseChargeVat, n.net], [0, 0, h(500_000)]);
+});
+
+import { checkSubcontractShare } from "../src/lib/contracting/subcontract.ts";
+test("subcontracted share within the form's ceilings (Etimad: approval above 30%, always under 50%)", () => {
+  const base = { mainValue: h(10_000_000), otherSubs: h(2_000_000), approvalPct: 30, maxPct: 50, approvalRef: null };
+  assert.equal(checkSubcontractShare({ ...base, thisValue: h(500_000) }).ok, true);
+  assert.equal(checkSubcontractShare({ ...base, thisValue: h(1_500_000) }).ok, false, "35% needs a documented approval");
+  assert.equal(checkSubcontractShare({ ...base, thisValue: h(1_500_000), approvalRef: "خطاب 12/1447" }).ok, true);
+  assert.equal(checkSubcontractShare({ ...base, thisValue: h(3_000_000), approvalRef: "خطاب" }).ok, false, "50% is not under 50%");
+  assert.equal(checkSubcontractShare({ ...base, thisValue: h(7_000_000), approvalPct: null, maxPct: null }).ok, true, "no ceilings in the form");
+});
+
+// C5: revenue over time, the contract asset/liability, onerous contracts.
+import { closeLines, computeClose } from "../src/lib/contracting/revenue.ts";
+test("input method: revenue by cost incurred; billed ahead is a contract liability", () => {
+  const r = computeClose({ method: "input", transactionPrice: h(10_000_000), workValue: h(10_000_000), estimatedCost: h(8_000_000), costToDate: h(2_000_000), certifiedToDate: 0, billedToDate: h(3_000_000) });
+  assert.equal(r.pct, 0.25);
+  assert.equal(r.revenueToDate, h(2_500_000));
+  assert.equal(r.position, -h(500_000), "billed 3.0M for 2.5M of revenue");
+  assert.equal(r.provision, 0);
+  assert.throws(() => computeClose({ method: "input", transactionPrice: 1, workValue: 1, estimatedCost: null, costToDate: 1, certifiedToDate: 0, billedToDate: 0 }), /estimate_required/);
+});
+
+test("output method: revenue by certified work; certified not billed is a contract asset", () => {
+  const r = computeClose({ method: "output", transactionPrice: h(10_000_000), workValue: h(10_000_000), estimatedCost: h(8_000_000), costToDate: h(2_000_000), certifiedToDate: h(4_000_000), billedToDate: h(3_000_000) });
+  assert.deepEqual([r.pct, r.revenueToDate, r.position], [0.4, h(4_000_000), h(1_000_000)]);
+});
+
+test("onerous contract: the whole expected loss at once, the rest as a provision", () => {
+  const r = computeClose({ method: "input", transactionPrice: h(1_000_000), workValue: h(1_000_000), estimatedCost: h(1_200_000), costToDate: h(300_000), certifiedToDate: 0, billedToDate: 0 });
+  assert.equal(r.expectedLoss, h(200_000));
+  assert.equal(r.revenueToDate, h(250_000));
+  assert.equal(r.provision, h(150_000), "200,000 expected − 50,000 already in cost over revenue");
+});
+
+test("a close entry undoes the previous position and books the new one, balanced", () => {
+  const lines = closeLines({ position: h(100), provision: h(50) }, { position: -h(40), provision: h(20) });
+  const dr = lines.reduce((a, l) => a + (l.debit ?? 0), 0);
+  const cr = lines.reduce((a, l) => a + (l.credit ?? 0), 0);
+  assert.equal(dr, cr);
+  const net = (k: string) => lines.filter((l) => l.key === k).reduce((a, l) => a + (l.debit ?? 0) - (l.credit ?? 0), 0);
+  assert.deepEqual([net("contract_asset"), net("contract_liability"), net("contract_revenue"), net("onerous_provision")], [-h(100), -h(40), h(140), h(30)]);
+});
+
+// C6: tender pricing (rate build-up).
+import { priceItem, priceTender } from "../src/lib/contracting/tender.ts";
+test("rate build-up: resources with waste, then overheads, risk and profit in turn", () => {
+  const item = { quantity: 100, resources: [
+    { kind: "material" as const, quantity: 1.05, unitCost: h(250), wastePct: 5 },   // concrete per m³ with 5% waste: 275.63
+    { kind: "labor" as const, quantity: 0.5, unitCost: h(40), wastePct: 0 },       // 20.00
+    { kind: "equipment" as const, quantity: 0.1, unitCost: h(300), wastePct: 0 },  // 30.00
+  ] };
+  const p = priceItem(item, { overheadPct: 10, riskPct: 5, profitPct: 10 });
+  assert.equal(p.direct, h(325.63));
+  assert.equal(p.costRate, Math.round(Math.round(h(325.63) * 1.1) * 1.05));
+  assert.equal(p.rate, Math.round(p.costRate * 1.1));
+  const t = priceTender([item, { quantity: 1, resources: [], directRate: h(50_000) }], { overheadPct: 10, riskPct: 5, profitPct: 10 });
+  assert.equal(t.total, p.amount + Math.round(Math.round(Math.round(h(50_000) * 1.1) * 1.05) * 1.1));
+  assert.equal(t.margin, t.total - t.cost);
+  assert.equal(t.byKind.labor, h(2_000));
+});
+
+// C7: equipment charging and material consumption against the BOQ.
+import { consumption, equipmentCharge, utilisation } from "../src/lib/contracting/site.ts";
+test("equipment: operating hours at the rate, idle at its share, breakdown free; consumption against norms", () => {
+  assert.equal(equipmentCharge({ operatingHours: 6, idleHours: 2, hourlyRate: h(250), idleRatePct: 40 }), h(1_700));
+  assert.equal(utilisation(6, 2, 2), 60);
+  assert.equal(utilisation(0, 0, 0), null);
+  assert.deepEqual(consumption({ certifiedQty: 100, normPerUnit: 1.02, issuedQty: 107.1 }), { theoretical: 102, variance: 5.1, wastePct: 5 });
+});
+
+// C8: payroll to projects by hours.
+import { allocateLabor } from "../src/lib/contracting/labor.ts";
+test("labour: each employee's cost shared by project hours over the hours worked; the rest stays put", () => {
+  const r = allocateLabor([
+    { cost: h(10_000), attendanceHours: 200, projectHours: { A: 120, B: 40 } }, // 80% on projects: 6,000 A + 2,000 B
+    { cost: h(6_000), attendanceHours: 0, projectHours: { A: 10 } },            // no attendance: all of it to A
+    { cost: h(4_000), attendanceHours: 180, projectHours: {} },                 // office: stays
+  ]);
+  assert.deepEqual([r.byProject.get("A")!.amount, r.byProject.get("B")!.amount], [h(12_000), h(2_000)]);
+  assert.equal(r.allocated, h(14_000));
+  assert.equal(r.unallocated, h(6_000));
+});
+
+test("review fixes: output progress on the work's value (damages move revenue with it); advance never beyond the period's work", () => {
+  // 10M contract, 1M damages already credited, 4.5M certified: 45% of the 9M price = 4.05M revenue, not 4.5M.
+  const r = computeClose({ method: "output", transactionPrice: h(9_000_000), workValue: h(10_000_000), estimatedCost: null, costToDate: 0, certifiedToDate: h(4_500_000), billedToDate: h(3_500_000) });
+  assert.deepEqual([r.revenueToDate, r.position, r.provision, r.grossProfit], [h(4_050_000), h(550_000), 0, null]);
+  // A final IPC with 50,000 of work cannot recover 400,000 of advance: only what its work carries.
+  const f = computeIpc(work(50_000), terms({ contractValue: h(1_000_000), advanceTaxable: h(400_000) }), { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: true, ldDays: 0 });
+  assert.equal(f.advanceRecovery, h(50_000));
+});

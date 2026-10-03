@@ -36,7 +36,7 @@ export const ROLE_LABELS: Record<string, string> = {
 
 export const CHANNEL_LABELS: Record<string, string> = { dine_in: "محلي", takeaway: "سفري", delivery: "توصيل" };
 export const METHOD_LABELS: Record<string, string> = { cash: "نقدي", mada: "مدى", visa: "فيزا", mastercard: "ماستركارد", platform: "عبر تطبيق التوصيل", online: "دفع إلكتروني" };
-export const DIMENSION_LABELS: Record<string, string> = { mass: "وزن", volume: "حجم", count: "عدد" };
+export const DIMENSION_LABELS: Record<string, string> = { mass: "وزن", volume: "حجم", count: "عدد", length: "طول", area: "مساحة" };
 /** Item types of a factory's item master; each is valued in its own inventory account. */
 export const ITEM_TYPE_LABELS: Record<string, string> = {
   raw: "مادة خام", semi_finished: "نصف مصنّع", finished: "منتج تام", packaging: "مواد تعبئة وتغليف", consumable: "مواد مستهلكة", spare_part: "قطع غيار",
@@ -97,15 +97,22 @@ export const AUDIT_LABELS: Record<string, string> = {
 export const MOVEMENT_LABELS: Record<string, string> = {
   purchase: "استلام شراء", sale: "بيع", refund_return: "إرجاع من مرتجع", transfer_out: "تحويل صادر",
   transfer_in: "تحويل وارد", waste: "هدر", count_adjustment: "تسوية جرد",
-  production_out: "صرف للإنتاج", production_in: "ناتج إنتاج", purchase_return: "مرتجع لمورد",
+  production_out: "صرف للإنتاج", production_in: "ناتج إنتاج", purchase_return: "مرتجع لمورد", site_issue: "صرف لمشروع", site_return: "إرجاع من مشروع",
 };
 export const WASTE_REASON_LABELS: Record<string, string> = {
   expired: "انتهاء الصلاحية", spoiled: "تلف في التخزين", damaged: "كسر أو تلف مادي", prep_error: "خطأ في التحضير", overproduction: "فائض إنتاج", other: "أخرى",
 };
+/** The reasons that make sense in each sector (a contractor does not prepare food nor overproduce). */
+export function wasteReasons(sector: string): Record<string, string> {
+  if (sector === "restaurants") return WASTE_REASON_LABELS;
+  const { prep_error: _p, overproduction: _o, ...rest } = WASTE_REASON_LABELS;
+  if (sector === "contracting") { const { expired: _e, ...site } = rest; return { ...site, damaged: "كسر أو تلف في الموقع", spoiled: "تلف في التخزين أو بالعوامل الجوية" }; }
+  return rest;
+}
 export const PAY_METHOD_LABELS: Record<string, string> = { bank_transfer: "تحويل بنكي", cash: "نقدي", cheque: "شيك", card: "بطاقة" };
 /** For showing receipts: also the ones a payment gateway recorded (never picked by hand). */
 export const RECEIPT_METHOD_LABELS: Record<string, string> = { ...PAY_METHOD_LABELS, online: "دفع إلكتروني" };
-export const LEDGER_KIND_LABELS: Record<string, string> = { purchase: "استلام أمر شراء", return: "مرتجع", payment: "دفعة" };
+export const LEDGER_KIND_LABELS: Record<string, string> = { purchase: "استلام أمر شراء", return: "مرتجع", payment: "دفعة", sub_ipc: "مستخلص مقاول باطن", sub_advance: "دفعة مقدمة لمقاول باطن", retention_release: "إفراج عن محتجزات" };
 
 // ── Accounting ──
 export const ACCOUNT_TYPE_LABELS: Record<string, string> = { asset: "أصول", liability: "خصوم", equity: "حقوق ملكية", revenue: "إيرادات", expense: "مصروفات" };

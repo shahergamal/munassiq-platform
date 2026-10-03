@@ -13,13 +13,24 @@ const payMethod = z.enum(["bank_transfer", "cash", "cheque", "card"]);
 
 // Supplier ledger: goods receipt notes increase what we owe; returns and payments decrease it.
 // Amounts are what the supplier invoices: VAT included (grand_total, total_value + vat_amount).
+// Subcontractors (contracting): an IPC with its invoice recorded adds its net payable (after retention, advance
+// recovery and set-off), an advance paid adds its invoice, and a retention release adds what becomes payable.
 const LEDGER = `
   SELECT supplier_id, received_on AS d, 'purchase'::text AS kind, id AS ref_id, grn_number AS ref_number, grand_total AS debit, 0::numeric AS credit, supplier_invoice AS note
     FROM goods_receipts WHERE grand_total > 0
   UNION ALL
   SELECT supplier_id, (created_at AT TIME ZONE '${TZ}')::date, 'return', id, return_number, 0, total_value + vat_amount, reason FROM purchase_returns
   UNION ALL
-  SELECT supplier_id, paid_on, 'payment', id, payment_number, 0, amount, reference FROM supplier_payments`;
+  SELECT supplier_id, paid_on, 'payment', id, payment_number, 0, amount, reference FROM supplier_payments
+  UNION ALL
+  SELECT c.supplier_id, coalesce(i.supplier_invoice_date, i.period_to), 'sub_ipc', i.id, i.number::bigint, i.net_payable, 0, coalesce(i.supplier_invoice, c.number)
+    FROM ipcs i JOIN contracts c ON c.id = i.contract_id WHERE c.role = 'SUB' AND i.status = 'invoiced'
+  UNION ALL
+  SELECT c.supplier_id, a.advance_date, 'sub_advance', a.id, a.number::bigint, a.taxable + a.vat, 0, coalesce(a.supplier_invoice, c.number)
+    FROM subcontract_advances a JOIN contracts c ON c.id = a.contract_id
+  UNION ALL
+  SELECT c.supplier_id, r.released_on, 'retention_release', r.id, 0::bigint, r.amount, 0, c.number
+    FROM retention_releases r JOIN contracts c ON c.id = r.contract_id WHERE c.role = 'SUB'`;
 
 const RETURN_SORT = ["number", "createdAt", "supplierName", "poNumber", "summary", "reason", "totalValue", "vatAmount"];
 const PAYABLE_SORT = ["name", "paymentTermsDays", "purchases", "returns", "payments", "balance", "lastPaymentOn"];
@@ -387,7 +398,10 @@ export default async function payablesRoutes(app: FastifyInstance) {
            FROM expenses e JOIN expense_categories c ON c.id = e.category_id
           WHERE e.status IN ('approved', 'paid') AND e.expense_date BETWEEN $1::date AND $2::date GROUP BY c.name ORDER BY total DESC`, [from, to])).rows;
       const sales = (await db.query<{ net: number }>(
-        `SELECT coalesce(sum(taxable), 0)::float8 AS net FROM pos_orders WHERE (created_at AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`, [from, to])).rows[0];
+        // Sales of every sector: the cashier's orders and the tax invoices (a contractor's IPCs, a factory's orders), net of credit notes.
+        `SELECT (coalesce((SELECT sum(taxable) FROM pos_orders WHERE (created_at AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date), 0)
+                + coalesce((SELECT sum(CASE WHEN kind = 'credit_note' THEN -taxable ELSE taxable END) FROM sales_documents
+                             WHERE kind IN ('invoice', 'credit_note', 'debit_note') AND issue_date BETWEEN $1::date AND $2::date), 0))::float8 AS net`, [from, to])).rows[0];
       const net = byCategory.reduce((a, r) => a + parseMoney(r.net), 0) / 100;
       return { from, to, byCategory, totalNet: net, netSales: sales?.net ?? 0, expenseRatio: sales && sales.net > 0 ? Math.round((net / sales.net) * 10000) / 100 : null };
     }, { readOnly: true });

@@ -16,7 +16,7 @@ import { focusFirstInvalid, SearchInput, SelectField, TextAreaField, TextField }
 import { beep, ScanField } from "../../ui/Scanner";
 import { Badge, PageHeader, StatCard, StatusBadge } from "../../ui/Layout";
 import { EmptyState, ErrorState, FormError, TableSkeleton } from "../../ui/States";
-import { MOVEMENT_LABELS, WASTE_REASON_LABELS } from "../../ui/status";
+import { MOVEMENT_LABELS, WASTE_REASON_LABELS, wasteReasons } from "../../ui/status";
 import { useToast } from "../../ui/Toast";
 import { IngredientPicker } from "./pickers";
 
@@ -101,12 +101,12 @@ export function TransfersPage() {
   const add = canWrite && <Link to={`/w/${tenantId}/transfers/new`} className="btn btn-primary"><Plus aria-hidden="true" />تحويل جديد</Link>;
   return (
     <div className="page">
-      <PageHeader eyebrow="المخزون" title="التحويلات بين المواقع" description="نقل المواد من المستودع إلى المطبخ أو بين الفروع. تخرج بتكلفة المصدر وتدخل الوجهة بمتوسطها المرجح." actions={add} />
+      <PageHeader eyebrow="المخزون" title="التحويلات بين المواقع" description="نقل المواد بين المستودعات ومواقع العمل والفروع. تخرج بتكلفة المصدر وتدخل الوجهة بمتوسطها المرجح." actions={add} />
       <section className="panel">
         <DataTable caption="التحويلات" prefs={prefs} query={list} rowKey={(r) => r.id} onPageChange={setPage} filtered={Boolean(status)} onClearFilters={() => setStatus("")}
           toolbar={<StatusTabs value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={[["", "الكل"], ["draft", "مسودات"], ["in_transit", "في الطريق"], ["completed", "مستلمة"], ["cancelled", "ملغاة"]]} />}
           onRowClick={(r) => navigate({ to: `/w/${tenantId}/transfers/${r.id}` })}
-          empty={{ title: "لا توجد تحويلات بعد", body: "أنشئ تحويلاً عندما تنقل مواد من المستودع إلى المطبخ.", action: add || undefined }}
+          empty={{ title: "لا توجد تحويلات بعد", body: "أنشئ تحويلاً عندما تنقل مواد من مستودع أو موقع إلى آخر.", action: add || undefined }}
           columns={[
             { key: "n", sortKey: "number", header: "الرقم", cell: (r) => <Link to={`/w/${tenantId}/transfers/${r.id}`}><strong className="num">TR-{r.number}</strong></Link> },
             { key: "from", sortKey: "fromName", header: "من", cell: (r) => r.fromName },
@@ -172,7 +172,7 @@ export function NewTransferPage() {
   }
 
   if (locations.isError) return <div className="page"><ErrorState error={locations.error} onRetry={() => locations.refetch()} /></div>;
-  if (locations.data && locs.length < 2) return <div className="page"><EmptyState title="تحتاج موقعين على الأقل" action={<Link to={`/w/${tenantId}/locations`} className="btn btn-primary">إضافة موقع</Link>}>التحويل ينقل المواد من موقع إلى آخر، مثل المستودع المركزي والمطبخ.</EmptyState></div>;
+  if (locations.data && locs.length < 2) return <div className="page"><EmptyState title="تحتاج موقعين على الأقل" action={<Link to={`/w/${tenantId}/locations`} className="btn btn-primary">إضافة موقع</Link>}>التحويل ينقل المواد من موقع إلى آخر، مثل المستودع المركزي وموقع العمل.</EmptyState></div>;
   const opts = locs.map((l) => ({ value: l.id, label: l.name }));
   return (
     <form ref={form} className="page" noValidate onSubmit={(e) => { e.preventDefault(); void submit((e.nativeEvent as SubmitEvent).submitter?.getAttribute("name") !== "draft"); }}>
@@ -328,23 +328,25 @@ export function TransferDetailPage() {
 interface WasteRow { id: string; number: number; reason: string; notes: string | null; totalCost: number; createdAt: string; locationName: string; summary: string | null }
 
 export function WastePage() {
-  const { tenantId, can, writable } = useTenant();
+  const { tenantId, can, writable, sector } = useTenant();
   const [from, setFrom] = useState(addDays(isoDay(), -29));
   const [to, setTo] = useState(isoDay());
   const [reason, setReason] = useState("");
   const [page, setPage] = useState(1);
   const prefs = useTablePrefs("waste", { server: true, onSortChange: () => setPage(1) });
   const list = useQuery({ queryKey: ["t", tenantId, "waste", { from, to, reason, page, sort: prefs.sortParam }], queryFn: () => api<Page<WasteRow>>("GET", "/t/waste", { tenant: tenantId, query: { from, to, reason, page, pageSize: 25, sort: prefs.sortParam } }), placeholderData: keepPreviousData });
-  const add = can("waste.create") && writable && <Link to={`/w/${tenantId}/waste/new`} className="btn btn-primary"><Plus aria-hidden="true" />تسجيل هدر</Link>;
+  const restaurantWords = sector === "restaurants";
+  const add = can("waste.create") && writable && <Link to={`/w/${tenantId}/waste/new`} className="btn btn-primary"><Plus aria-hidden="true" />{restaurantWords ? "تسجيل هدر" : "تسجيل تالف"}</Link>;
   return (
     <div className="page">
-      <PageHeader eyebrow="المخزون" title="الهدر والتلف" description="كل ما يُتلف يُخصم من المخزون بمتوسط تكلفته المرجح ويظهر في تحليل الهدر. السجل لا يُعدَّل ولا يُحذف." actions={add} />
+      <PageHeader eyebrow="المخزون" title={restaurantWords ? "الهدر والتلف" : "التالف والإتلاف"} actions={add}
+        description={`كل ما يُتلف يُخصم من المخزون بمتوسط تكلفته المرجح ويظهر في ${restaurantWords ? "تحليل الهدر" : "تحليل التالف"}. السجل لا يُعدَّل ولا يُحذف.`} />
       <section className="panel">
         <DataTable caption="سجلات الهدر" prefs={prefs} query={list} rowKey={(r) => r.id} onPageChange={setPage} filtered={Boolean(reason)} onClearFilters={() => setReason("")}
           toolbar={<>
           <DateRange from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); setPage(1); }} />
           <select className="select" aria-label="السبب" value={reason} onChange={(e) => { setReason(e.target.value); setPage(1); }}>
-            <option value="">كل الأسباب</option>{Object.entries(WASTE_REASON_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            <option value="">كل الأسباب</option>{Object.entries(wasteReasons(sector)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           </>}
           empty={{ title: "لا يوجد هدر مسجل في هذه الفترة", body: "سجّل كل تلف أو انتهاء صلاحية فور حدوثه، ليبقى الرصيد مطابقاً والتكلفة حقيقية.", action: add || undefined }}
@@ -362,7 +364,7 @@ export function WastePage() {
 }
 
 export function NewWastePage() {
-  const { tenantId } = useTenant();
+  const { tenantId, sector } = useTenant();
   const navigate = useNavigate();
   const invalidate = useInvalidate(tenantId);
   const toast = useToast();
@@ -404,12 +406,12 @@ export function NewWastePage() {
   const locName = locations.data?.items.find((l) => l.id === loc)?.name;
   return (
     <form ref={form} className="page" noValidate onSubmit={(e) => { e.preventDefault(); review(); }}>
-      <PageHeader eyebrow="الهدر والتلف" title="تسجيل هدر" description="يُخصم فوراً من رصيد الموقع ولا يمكن تعديله بعد التسجيل." actions={<Link to={`/w/${tenantId}/waste`} className="btn btn-ghost"><ArrowRight aria-hidden="true" />السجل</Link>} />
+      <PageHeader eyebrow={sector === "restaurants" ? "الهدر والتلف" : "التالف والإتلاف"} title={sector === "restaurants" ? "تسجيل هدر" : "تسجيل تالف"} description="يُخصم فوراً من رصيد الموقع ولا يمكن تعديله بعد التسجيل." actions={<Link to={`/w/${tenantId}/waste`} className="btn btn-ghost"><ArrowRight aria-hidden="true" />السجل</Link>} />
       <section className="panel panel-pad form-section" aria-labelledby="waste-h">
         <h2 id="waste-h">بيانات الهدر</h2>
         <div className="form-grid">
           <SelectField label="الموقع" required placeholder="اختر الموقع" value={loc} onChange={(e) => setLoc(e.target.value)} error={errors.loc} options={(locations.data?.items ?? []).map((l) => ({ value: l.id, label: l.name }))} />
-          <SelectField label="السبب" required value={reason} onChange={(e) => setReason(e.target.value)} options={Object.entries(WASTE_REASON_LABELS).map(([value, label]) => ({ value, label }))} />
+          <SelectField label="السبب" required value={reason} onChange={(e) => setReason(e.target.value)} options={Object.entries(wasteReasons(sector)).map(([value, label]) => ({ value, label }))} />
         </div>
         <TextAreaField label="ملاحظات" required={reason === "other"} optional={reason !== "other"} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} error={errors.notes} />
       </section>

@@ -34,7 +34,7 @@ export interface TenantContext {
   settings: { vatRatePercent: number; discountApprovalPercent: number; poOwnerApprovalAbove?: number | null };
 }
 
-export interface Unit { id: string; code: string; name: string; dimension: "mass" | "volume" | "count"; toBase: number }
+export interface Unit { id: string; code: string; name: string; dimension: "mass" | "volume" | "count" | "length" | "area"; toBase: number }
 
 export interface Ingredient {
   id: string; sku: string; name: string; category: string | null; barcode: string | null; isActive: boolean;
@@ -46,7 +46,7 @@ export type ItemType = "raw" | "semi_finished" | "finished" | "packaging" | "con
 
 export interface Supplier { id: string; code: string; name: string; taxId: string | null; phone: string | null; email: string | null; paymentTermsDays: number; residency?: "resident" | "non_resident"; isActive: boolean }
 export interface Branch { id: string; code: string; name: string; city: string | null; isActive: boolean }
-export interface Location { id: string; code: string; name: string; branchId: string | null; locationType: "kitchen" | "warehouse" | "store" | "quarantine"; isActive: boolean }
+export interface Location { id: string; code: string; name: string; branchId: string | null; locationType: "kitchen" | "warehouse" | "store" | "quarantine" | "site"; isActive: boolean }
 
 /** A customer, with the business fields a standard (B2B) tax invoice needs for its buyer block. */
 export interface Customer {

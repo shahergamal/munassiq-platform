@@ -16,6 +16,7 @@ export const SECTORS = ["restaurants", "manufacturing", "contracting"] as const;
 export type Sector = (typeof SECTORS)[number];
 const REST = ["restaurants"] as const;
 const MFG = ["manufacturing"] as const;
+const CON = ["contracting"] as const;
 const act = <K extends string>(key: K, label: string, opts: ActionOpts = {}) => ({ key, label, ...opts });
 const view = (hint?: string) => act("view", "عرض", { hint });
 const create = (hint?: string) => act("create", "إضافة", { hint });
@@ -24,10 +25,10 @@ const del = (hint?: string) => act("delete", "حذف", { hint, sensitive: true }
 
 export const CATALOG = [
   { key: "basic", label: "البيانات الأساسية", pages: [
-    { key: "ingredients", label: "المواد الخام", labels: { manufacturing: "الأصناف" }, actions: [view("القائمة والأرصدة والتكلفة"), create(), edit("والباركودات"), del(), act("import", "استيراد Excel"), act("export", "تصدير Excel")] },
+    { key: "ingredients", label: "المواد الخام", labels: { manufacturing: "الأصناف", contracting: "المواد والأصناف" }, actions: [view("القائمة والأرصدة والتكلفة"), create(), edit("والباركودات"), del(), act("import", "استيراد Excel"), act("export", "تصدير Excel")] },
     { key: "suppliers", label: "الموردون", actions: [view(), create(), edit(), del()] },
     { key: "branches", label: "الفروع", actions: [view(), create(), edit(), del()] },
-    { key: "locations", label: "المطابخ والمستودعات", labels: { manufacturing: "المستودعات ومواقع الإنتاج" }, actions: [view(), create(), edit(), del()] },
+    { key: "locations", label: "المطابخ والمستودعات", labels: { manufacturing: "المستودعات ومواقع الإنتاج", contracting: "المستودعات ومخازن المواقع" }, actions: [view(), create(), edit(), del()] },
     { key: "units", label: "وحدات القياس", actions: [view()] },
     { key: "dining", sectors: REST, label: "الصالات والطاولات", actions: [view(), create(), edit()] },
     { key: "platforms", sectors: REST, label: "تطبيقات التوصيل", actions: [view(), create(), edit()] },
@@ -40,9 +41,9 @@ export const CATALOG = [
   ] },
   { key: "inventory", label: "المخزون", pages: [
     { key: "stock", label: "رصيد المخزون", actions: [view()] },
-    { key: "batches", label: "الصلاحية والدفعات", actions: [view(), act("create", "تسجيل تاريخ لرصيد قائم")] },
+    { key: "batches", sectors: [...REST, ...MFG], label: "الصلاحية والدفعات", actions: [view(), act("create", "تسجيل تاريخ لرصيد قائم")] },
     { key: "transfers", label: "التحويلات بين المواقع", actions: [view(), create(), act("dispatch", "إرسال"), act("receive", "استلام وتسجيل العجز"), act("cancel", "إلغاء")] },
-    { key: "waste", label: "الهدر والتلف", labels: { manufacturing: "التالف والإتلاف" }, actions: [view(), act("create", "تسجيل هدر وإتلاف", { hint: "يخرج من المخزون ويُرحَّل مصروفاً" })] },
+    { key: "waste", label: "الهدر والتلف", labels: { manufacturing: "التالف والإتلاف", contracting: "التالف والإتلاف" }, actions: [view(), act("create", "تسجيل هدر وإتلاف", { hint: "يخرج من المخزون ويُرحَّل مصروفاً" })] },
     { key: "stocktakes", label: "الجرد الفعلي", actions: [view(), act("count", "بدء الجرد والعدّ"), act("post", "ترحيل الفروقات", { hint: "يعدّل المخزون والتكلفة. الأفضل ألا يملكه من يعدّ", sensitive: true })] },
     { key: "movements", label: "حركة المواد", labels: { manufacturing: "حركة الأصناف" }, actions: [view()] },
   ] },
@@ -69,8 +70,8 @@ export const CATALOG = [
     { key: "trace", sectors: MFG, label: "تتبع التشغيلات", actions: [view("من المورد إلى العميل وبالعكس")] },
   ] },
   { key: "maintenance", label: "الصيانة", pages: [
-    { key: "machines", sectors: MFG, label: "الآلات وخطط الصيانة", actions: [view(), create(), edit("والعدّاد والخطط")] },
-    { key: "maintenance", sectors: MFG, label: "أوامر الصيانة", actions: [view("ومؤشرات MTBF وMTTR"), create("وقائية أو إصلاح عطل"),
+    { key: "machines", sectors: [...MFG, ...CON], label: "الآلات وخطط الصيانة", actions: [view(), create(), edit("والعدّاد والخطط")] },
+    { key: "maintenance", sectors: [...MFG, ...CON], label: "أوامر الصيانة", actions: [view("ومؤشرات MTBF وMTTR"), create("وقائية أو إصلاح عطل"),
       act("complete", "إنجاز الأمر وصرف قطع الغيار", { hint: "يُخرج القطع من المخزون إلى مصروف الصيانة" }), act("cancel", "إلغاء")] },
   ] },
   { key: "sales", label: "المبيعات", pages: [
@@ -88,6 +89,31 @@ export const CATALOG = [
   { key: "finance", label: "المالية", pages: [
     { key: "payables", label: "مستحقات الموردين", actions: [view("الأرصدة وكشوف الحساب"), act("pay", "تسجيل دفعة لمورد", { sensitive: true })] },
     { key: "expenses", label: "المصروفات", actions: [view(), create("تُسجَّل معلّقة"), act("approve", "اعتماد", { hint: "لا يعتمد مصروفاً سجّله بنفسه، عدا المالك" }), act("pay", "سداد", { sensitive: true }), act("cancel", "إلغاء"), act("categories", "إدارة التصنيفات")] },
+  ] },
+  { key: "contracting", label: "المقاولات", pages: [
+    { key: "projects", sectors: CON, label: "المشاريع", actions: [view("وWBS والتصاريح"), create(), edit()] },
+    { key: "contracts", sectors: CON, label: "العقود", actions: [view("والشروط والسقوف النظامية"), create(), edit("قبل التفعيل"),
+      act("activate", "تفعيل العقد", { hint: "يثبت جدول الكميات ويطبق السقوف النظامية الموثقة", sensitive: true })] },
+    { key: "boq", sectors: CON, label: "جداول الكميات", actions: [view(), edit("البنود وWBS"), act("import", "استيراد وتصدير Excel")] },
+    { key: "guarantees", sectors: CON, label: "الضمانات البنكية", actions: [view("وتنبيهات الانتهاء"), create("ورسومها"), edit("الإفراج والتمديد")] },
+    { key: "ipcs", sectors: CON, label: "المستخلصات", actions: [view(), create("إعداد وتقديم"), act("certify", "اعتماد الاستشاري (الكميات المعتمدة)"),
+      act("approve", "اعتماد العميل", { sensitive: true }), act("invoice", "إصدار الفاتورة والدفعة المقدمة", { hint: "فاتورة زاتكا من المستخلص المعتمد", sensitive: true })] },
+    { key: "variations", sectors: CON, label: "أوامر التغيير", actions: [view(), create(), act("approve", "اعتماد أو رفض", { hint: "بالتحقق من سقوف المادة 67", sensitive: true })] },
+    { key: "claims", sectors: CON, label: "المطالبات", actions: [view("ومهل الإخطار"), create(), edit("الحالة والتقييم"),
+      act("agree", "اعتماد الاتفاق على مطالبة", { hint: "يدخل سعر المعاملة والإيراد", sensitive: true })] },
+    { key: "subcontractors", sectors: CON, label: "مقاولو الباطن", actions: [view("والتأهيل والتصنيف"), create(), edit("التأهيل والتقييم"),
+      act("approve", "اعتماد التأهيل أو إيقافه", { hint: "لا يُسند عقد باطن لمقاول غير معتمد", sensitive: true })] },
+    { key: "tenders", sectors: CON, label: "العطاءات والتسعير", actions: [view("وتحليل الأسعار"), create(), edit("البنود والتسعير والتقديم والنتيجة"),
+      act("convert", "تحويل العطاء الفائز إلى عقد", { sensitive: true })] },
+    { key: "revenue", sectors: CON, label: "الإيراد والأعمال تحت التنفيذ", actions: [view("جدول الأعمال تحت التنفيذ"), act("estimate", "تقدير التكلفة الكلية للعقد"),
+      act("close", "الإقفال الشهري", { hint: "يرحّل أصل/التزام العقد ومخصص العقود المثقلة", sensitive: true }),
+      act("settings", "سياسة قياس الإنجاز", { hint: "المخرجات (المعتمد) أو المدخلات (التكلفة)", sensitive: true })] },
+    { key: "site_stores", sectors: CON, label: "مخازن المواقع والمواد", actions: [view("والاستهلاك والمحتوى المحلي"), act("issue", "صرف وإرجاع المواد للمشاريع"),
+      edit("المعدلات النظرية والمحتوى المحلي للأصناف")] },
+    { key: "labor", sectors: CON, label: "العمالة على المشاريع", actions: [view("الساعات والتحميل"), act("record", "تسجيل ساعات العمالة على المشاريع"),
+      act("allocate", "تحميل مسير الرواتب على المشاريع", { hint: "بالإجماليات لكل مشروع؛ رواتب الأفراد تبقى مختومة", sensitive: true })] },
+    { key: "equipment", sectors: CON, label: "المعدات على المشاريع", actions: [view("والاستغلال"), create("ساعات التشغيل اليومية"), edit("الملكية والسعر الداخلي")] },
+    { key: "retention", sectors: CON, label: "المحتجزات", actions: [view("وأعمارها"), act("release", "تسجيل الإفراج", { hint: "قبض محتجز العميل أو استحقاق محتجز مقاول الباطن", sensitive: true })] },
   ] },
   { key: "hr", label: "الموارد البشرية", pages: [
     { key: "employees", label: "الموظفون", actions: [view("البيانات الوظيفية والوثائق وتنبيهات الانتهاء"),
@@ -123,7 +149,7 @@ export const CATALOG = [
     { key: "rep_recipe_explosion", sectors: REST, label: "تفجير تكلفة الوصفة", actions: [view()] },
     { key: "rep_purchase_prices", label: "أسعار الشراء وتغيّرها", actions: [view()] },
     { key: "rep_stock_valuation", label: "تقييم المخزون", actions: [view()] },
-    { key: "rep_waste", label: "تحليل الهدر", actions: [view()] },
+    { key: "rep_waste", label: "تحليل الهدر", labels: { manufacturing: "تحليل التالف", contracting: "تحليل التالف" }, actions: [view()] },
     { key: "rep_stock_variance", label: "انحرافات الجرد", actions: [view()] },
     { key: "rep_expenses", label: "المصروفات", actions: [view()] },
     { key: "rep_purchase_match", label: "مطابقة فواتير الموردين", actions: [view("أمر الشراء مقابل الاستلام مقابل الفاتورة")] },
@@ -249,6 +275,16 @@ const PRODUCTION = {
   inventory_clerk: ["work_centers.view", "boms.view", "mos.view", "mos.issue", "mos.produce", "sales_orders.view", "sales_orders.deliver", "mrp.view", "qc_inspections.view", "qc_inspections.create", "ncrs.view", "trace.view", "maintenance.view"] as Permission[],
 };
 
+/** Contracting pages (after the first version): the manager runs projects; the accountant invoices and guarantees. */
+const CONTRACTING = {
+  manager: PERMISSIONS.filter((p) => ["projects.", "contracts.", "boq.", "guarantees.", "ipcs.", "variations.", "claims.", "subcontractors.", "retention.view", "revenue.view", "revenue.estimate", "tenders.", "site_stores.", "equipment.", "machines.", "maintenance.", "labor.view", "labor.record"].some((x) => p.startsWith(x))
+    && !["ipcs.invoice", "contracts.activate", "ipcs.approve", "claims.agree"].includes(p)),
+  accountant: ["projects.view", "contracts.view", "boq.view", "guarantees.view", "guarantees.create", "guarantees.edit", "ipcs.view", "ipcs.invoice", "variations.view", "claims.view",
+    "subcontractors.view", "retention.view", "retention.release", "revenue.view", "revenue.estimate", "revenue.close", "revenue.settings", "tenders.view", "site_stores.view", "equipment.view", "labor.view", "labor.allocate"] as Permission[],
+  // The site storekeeper: projects to issue to, the site stores, equipment days and labour hours.
+  inventory_clerk: ["projects.view", "site_stores.view", "site_stores.issue", "equipment.view", "equipment.create", "labor.view", "labor.record", "machines.view", "maintenance.view"] as Permission[],
+};
+
 /** HR pages (every sector): the manager runs attendance and leaves; pay stays with the owner (and custom roles). */
 const HR = {
   manager: ["employees.view", "attendance.view", "attendance.record", "leaves.view", "leaves.request", "leaves.approve"] as Permission[],
@@ -257,11 +293,11 @@ const HR = {
 
 const MATRIX: Record<Role | "support", readonly Permission[]> = {
   owner: PERMISSIONS,
-  manager: normalizePermissions([...Object.keys(LEGACY).filter((p) => p !== "members:manage" && p !== "settings:manage"), ...PRODUCTION.manager, ...HR.manager]),
+  manager: normalizePermissions([...Object.keys(LEGACY).filter((p) => p !== "members:manage" && p !== "settings:manage"), ...PRODUCTION.manager, ...HR.manager, ...CONTRACTING.manager]),
   // The clerk counts and moves stock; posting a count (which writes off value) needs someone else: owner, manager or accountant.
   accountant: normalizePermissions(["catalog:read", "stock:read", "stock:post_count", "purchases:read", "purchases:approve", "recipes:read", "pos:read", "reports:read",
-    "expenses:read", "expenses:write", "expenses:approve", "payables:write", "assistant:use", "accounting:read", "accounting:write", "accounting:manage", ...PRODUCTION.accountant, ...HR.accountant]),
-  inventory_clerk: normalizePermissions(["catalog:read", "catalog:write", "stock:read", "stock:adjust", "purchases:read", "purchases:write", "purchases:receive", "recipes:read", "assistant:use", ...PRODUCTION.inventory_clerk]),
+    "expenses:read", "expenses:write", "expenses:approve", "payables:write", "assistant:use", "accounting:read", "accounting:write", "accounting:manage", ...PRODUCTION.accountant, ...HR.accountant, ...CONTRACTING.accountant]),
+  inventory_clerk: normalizePermissions(["catalog:read", "catalog:write", "stock:read", "stock:adjust", "purchases:read", "purchases:write", "purchases:receive", "recipes:read", "assistant:use", ...PRODUCTION.inventory_clerk, ...CONTRACTING.inventory_clerk]),
   // Kitchen staff use the cashier role on the kitchen screen; there is no separate kitchen role yet.
   cashier: normalizePermissions(["catalog:read", "recipes:read", "pos:read", "pos:operate", "pos:kitchen", "assistant:use"]),
   // A platform admin in a support session: the business pages read-only; never the people, their roles or billing.

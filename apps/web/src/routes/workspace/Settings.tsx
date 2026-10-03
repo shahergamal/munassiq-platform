@@ -18,7 +18,7 @@ import { ROLE_LABELS } from "../../ui/status";
 import { useToast } from "../../ui/Toast";
 
 export function SettingsPage() {
-  const { tenantId, ctx, can, writable } = useTenant();
+  const { tenantId, ctx, can, writable, restaurant } = useTenant();
   const qc = useQueryClient();
   const toast = useToast();
   const poLimit = ctx.settings.poOwnerApprovalAbove ?? null;
@@ -68,7 +68,7 @@ export function SettingsPage() {
         <div className="card-body stack-lg">
           <div className="form-grid">
             <TextField label="نسبة ضريبة القيمة المضافة ٪" numeric required disabled={!canEdit} value={v.vat} onChange={(e) => setV({ ...v, vat: e.target.value })} hint="تُطبق على الطلبات الجديدة فقط." />
-            <TextField label="أقصى خصم للكاشير دون موافقة ٪" numeric required disabled={!canEdit} value={v.approval} onChange={(e) => setV({ ...v, approval: e.target.value })} hint="الخصم الأعلى يحتاج مالكاً أو مديراً." />
+            {restaurant && <TextField label="أقصى خصم للكاشير دون موافقة ٪" numeric required disabled={!canEdit} value={v.approval} onChange={(e) => setV({ ...v, approval: e.target.value })} hint="الخصم الأعلى يحتاج مالكاً أو مديراً." />}
             <TextField label="أوامر الشراء فوق هذا المبلغ يعتمدها المالك" numeric optional disabled={!canEdit} value={v.po} onChange={(e) => setV({ ...v, po: e.target.value })} hint="الإجمالي شامل الضريبة. اتركه فارغاً ليعتمد كل من له صلاحية الاعتماد بلا حد." />
           </div>
           <FormError error={error} />
@@ -93,9 +93,10 @@ const hueOf = (id: string) => HUES[[...id].reduce((a, c) => a + c.charCodeAt(0),
 const initials = (name: string) => name.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("");
 export const memberRoleLabel = (m: { role: string; roleName?: string | null }) => (m.role === "custom" ? m.roleName ?? "دور مخصص" : ROLE_LABELS[m.role] ?? m.role);
 
-function roleOptions(roles: RolesData | undefined) {
+/** The cashier is a restaurant's role: other sectors never sell at a till. */
+function roleOptions(roles: RolesData | undefined, restaurant: boolean) {
   return [
-    ...ASSIGNABLE.map((r) => ({ value: r as string, label: ROLE_LABELS[r] as string })),
+    ...ASSIGNABLE.filter((r) => restaurant || r !== "cashier").map((r) => ({ value: r as string, label: ROLE_LABELS[r] as string })),
     ...(roles?.custom ?? []).map((r) => ({ value: `custom:${r.id}`, label: `${r.name} (مخصص)` })),
   ];
 }
@@ -211,7 +212,8 @@ function MembersTab({ tenantId }: { tenantId: string }) {
 
 function InviteDialog({ tenantId, onClose, onDone }: { tenantId: string; onClose: () => void; onDone: (email: string) => void }) {
   const roles = useRoles(tenantId);
-  const [v, setV] = useState({ email: "", role: "cashier" });
+  const { restaurant } = useTenant();
+  const [v, setV] = useState({ email: "", role: restaurant ? "cashier" : "inventory_clerk" });
   const [error, setError] = useState<unknown>(null);
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -227,7 +229,7 @@ function InviteDialog({ tenantId, onClose, onDone }: { tenantId: string; onClose
       footer={<><Button type="submit" variant="primary" loading={busy} loadingText="جارٍ الإضافة…">إضافة العضو</Button><Button onClick={onClose} disabled={busy}>إلغاء</Button></>}>
       <p className="muted">يجب أن يكون للموظف حساب مفعّل في مُنَسِّق. اطلب منه التسجيل وتفعيل بريده أولاً، ثم أضفه هنا.</p>
       <TextField label="بريد الموظف" type="email" dir="ltr" required autoFocus value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} error={emailErr} />
-      <SelectField label="الدور" required value={v.role} onChange={(e) => setV({ ...v, role: e.target.value })} hint={roleHint(v.role, roles.data)} options={roleOptions(roles.data)} />
+      <SelectField label="الدور" required value={v.role} onChange={(e) => setV({ ...v, role: e.target.value })} hint={roleHint(v.role, roles.data)} options={roleOptions(roles.data, restaurant)} />
       <FormError error={error} />
     </Dialog>
   );
@@ -235,10 +237,11 @@ function InviteDialog({ tenantId, onClose, onDone }: { tenantId: string; onClose
 
 function ChangeRoleDialog({ tenantId, member, onClose, onDone }: { tenantId: string; member: Member; onClose: () => void; onDone: (label: string) => void }) {
   const roles = useRoles(tenantId);
+  const { restaurant } = useTenant();
   const [value, setValue] = useState(roleValue(member));
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const options = roleOptions(roles.data);
+  const options = roleOptions(roles.data, restaurant);
   async function submit() {
     if (value === roleValue(member)) return onClose();
     setBusy(true); setError(null);
@@ -258,7 +261,7 @@ function ChangeRoleDialog({ tenantId, member, onClose, onDone }: { tenantId: str
 }
 
 function RolesTab({ tenantId }: { tenantId: string }) {
-  const { writable } = useTenant();
+  const { writable, restaurant } = useTenant();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
@@ -299,7 +302,8 @@ function RolesTab({ tenantId }: { tenantId: string }) {
         <div className="toolbar"><h2 id="custom-roles">أدوار منشأتك</h2></div>
         {d.custom.length === 0 ? (
           <EmptyState title="لا توجد أدوار مخصصة بعد" action={canEdit ? <Link to={`/w/${tenantId}/members/roles/new`} className="btn btn-secondary">إنشاء أول دور</Link> : undefined}>
-            مثال: «مشرف وردية» يبيع ويسترجع ويرى تقرير الكاشير فقط، أو «مسؤول مشتريات» ينشئ أوامر الشراء ويستلمها دون اعتمادها أو حذف الموردين.
+            {restaurant ? "مثال: «مشرف وردية» يبيع ويسترجع ويرى تقرير الكاشير فقط، أو «مسؤول مشتريات» ينشئ أوامر الشراء ويستلمها دون اعتمادها أو حذف الموردين."
+              : "مثال: «مهندس موقع» يصرف المواد ويسجل ساعات العمالة والمعدات، أو «مسؤول مشتريات» ينشئ أوامر الشراء ويستلمها دون اعتمادها."}
           </EmptyState>
         ) : (
           <div className="table-wrap">

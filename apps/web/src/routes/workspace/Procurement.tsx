@@ -43,7 +43,7 @@ export function RequisitionsPage() {
   const create = can("requisitions.create") && writable && <Link to={`/w/${tenantId}/requisitions/new`} className="btn btn-primary"><Plus aria-hidden="true" />طلب شراء جديد</Link>;
   return (
     <div className="page">
-      <PageHeader eyebrow="المشتريات" title="طلبات الشراء" description="المطبخ أو المستودع يطلب، والمدير يعتمد، والمشتري يحوّل الطلب إلى أوامر شراء لكل مورد. لا يُشترى شيء بلا طلب معتمد." actions={create} />
+      <PageHeader eyebrow="المشتريات" title="طلبات الشراء" description="الموقع أو المستودع يطلب، والمدير يعتمد، والمشتري يحوّل الطلب إلى أوامر شراء لكل مورد. لا يُشترى شيء بلا طلب معتمد." actions={create} />
       <section className="panel">
         <DataTable caption="طلبات الشراء" tableId="requisitions" query={list} rowKey={(r) => r.id} onPageChange={setPage}
           toolbar={<StatusTabs value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={[["", "الكل"], ["submitted", "بانتظار الاعتماد"], ["approved", "معتمدة"], ["converted", "محوّلة"], ["rejected", "مرفوضة"]]} />}
