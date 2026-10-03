@@ -4,6 +4,7 @@ import type { Db } from "../../db/pool.ts";
 import { addMonths, finalAcceptanceBlockers } from "../../lib/contracting/handover.ts";
 import { resolveParam, type Regime } from "../../lib/contracting/params.ts";
 import { AppError, badRequest, notFound } from "../../lib/errors.ts";
+import { isoDate } from "../../lib/calendar.ts";
 import { auditTenant, isUuid, requireTenant, tenantTx } from "../../plugins/auth.ts";
 import { today } from "../restaurants/batches.ts";
 
@@ -13,7 +14,7 @@ import { today } from "../restaurants/batches.ts";
 // tracked to verified. Final acceptance needs them all verified; the contract is then completed (its final IPC may
 // follow), and closed once its retention is released and its guarantees are returned.
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح");
+const date = isoDate;
 const optText = (max: number) => z.string().trim().max(max).nullable().optional().transform((v) => v || null);
 const conflict = (m: string, code = "invalid_state") => new AppError(409, code, m);
 const notFuture = (d: string | null | undefined, what: string) => { if (d && d > today()) throw badRequest(`${what} لا يكون في المستقبل`); };

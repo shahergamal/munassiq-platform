@@ -47,17 +47,31 @@ export function parseXer(text: string): ImportedActivity[] {
   return out;
 }
 
+/**
+ * The text between `<name>` and the next `</name>` from `from`, by plain index search: linear in the input, so a
+ * hostile file (thousands of unclosed tags) cannot stall the server the way a lazy regex scan would.
+ */
+function between(s: string, name: string, from = 0): { text: string; end: number } | null {
+  const open = `<${name}>`, close = `</${name}>`;
+  const a = s.indexOf(open, from);
+  if (a < 0) return null;
+  const b = s.indexOf(close, a + open.length);
+  if (b < 0) return null;
+  return { text: s.slice(a + open.length, b), end: b + close.length };
+}
+const unescape = (v: string) => v.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim();
+
 /** MS Project XML (MSPDI): <Task> elements with UID, Name, WBS/OutlineNumber, Start, Finish, PercentComplete, Summary. */
-export function parseMspdi(xml: string): ImportedActivity[] {
-  const tag = (block: string, name: string) => {
-    const m = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(block);
-    return m ? m[1]!.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").trim() : undefined;
-  };
-  const tasksBlock = /<Tasks>([\s\S]*?)<\/Tasks>/.exec(xml)?.[1];
-  if (!tasksBlock) throw new Error("mspdi_no_tasks");
+export function parseMspdi(xml: string, maxTasks = 20_000): ImportedActivity[] {
+  const tasksBlock = between(xml, "Tasks")?.text;
+  if (tasksBlock === undefined) throw new Error("mspdi_no_tasks");
+  const tag = (block: string, name: string) => { const t = between(block, name); return t ? unescape(t.text) : undefined; };
   const rows: (ImportedActivity & { outline: string })[] = [];
-  for (const m of tasksBlock.matchAll(/<Task>([\s\S]*?)<\/Task>/g)) {
-    const b = m[1]!;
+  let at = 0;
+  for (let t = between(tasksBlock, "Task", at); t; t = between(tasksBlock, "Task", at)) {
+    at = t.end;
+    if (rows.length >= maxTasks) throw new Error("mspdi_too_many");
+    const b = t.text;
     const outline = tag(b, "OutlineNumber") ?? "";
     if (tag(b, "IsNull") === "1" || outline === "0" || !outline) continue;
     const start = date(tag(b, "Start"));

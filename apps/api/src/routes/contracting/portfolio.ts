@@ -10,7 +10,9 @@ import { projectCashFlow, projectEvm } from "./control.ts";
 // The executive view of the contracting portfolio (docs/contracting/ARCHITECTURE.md, C13): per project, the
 // contract value with approved variations and agreed claims, what was certified, billed and collected, the cost
 // to date and the estimate at completion, the forecast margin and the schedule and cost indices, with the flags a
-// director acts on; and the cash forecast of all projects together. Every figure is the server's.
+// director acts on; and the cash forecast of all projects together. Every figure is the server's and is as of the
+// date asked, except the commitments (open orders and subcontracts) which are today's: an order's past state is
+// not kept.
 
 const h = (v: string | number | null | undefined) => Math.round(Number(v ?? 0) * 100);
 const r = (v: number) => Math.round(v) / 100;
@@ -24,18 +26,21 @@ async function portfolio(db: Db, asOf: string) {
     `WITH k AS (SELECT * FROM contracts WHERE role = 'MAIN' AND status IN ('active', 'completed'))
      SELECT p.id, p.code, p.name, p.status, c.name AS client,
             coalesce((SELECT sum(k.value + coalesce((SELECT sum(l.quantity * l.rate) FROM variation_lines l JOIN variations v ON v.id = l.variation_id
-                                                       WHERE v.contract_id = k.id AND v.status = 'approved'), 0)) FROM k WHERE k.project_id = p.id), 0)::text AS value,
-            coalesce((SELECT sum(x.amount_assessed) FROM claims x JOIN k ON k.id = x.contract_id WHERE k.project_id = p.id AND x.status = 'agreed'), 0)::text AS claims,
-            coalesce((SELECT sum((SELECT gross_to_date FROM ipcs i WHERE i.contract_id = k.id AND i.status IN ('approved', 'invoiced') ORDER BY i.number DESC LIMIT 1)) FROM k WHERE k.project_id = p.id), 0)::text AS certified,
+                                                       WHERE v.contract_id = k.id AND v.status = 'approved' AND (v.decided_at AT TIME ZONE 'Asia/Riyadh')::date <= $1), 0)) FROM k WHERE k.project_id = p.id), 0)::text AS value,
+            coalesce((SELECT sum(x.amount_assessed) FROM claims x JOIN k ON k.id = x.contract_id WHERE k.project_id = p.id AND x.status = 'agreed'
+                        AND (x.agreed_at AT TIME ZONE 'Asia/Riyadh')::date <= $1), 0)::text AS claims,
+            coalesce((SELECT sum((SELECT gross_to_date FROM ipcs i WHERE i.contract_id = k.id AND i.status IN ('approved', 'invoiced') AND (i.approved_at AT TIME ZONE 'Asia/Riyadh')::date <= $1
+                                  ORDER BY i.number DESC LIMIT 1)) FROM k WHERE k.project_id = p.id), 0)::text AS certified,
             coalesce((SELECT sum(CASE d.kind WHEN 'credit_note' THEN -d.taxable ELSE d.taxable END) FROM sales_documents d
                        WHERE d.kind IN ('invoice', 'debit_note', 'credit_note') AND d.issue_date <= $1
                          AND coalesce(d.contract_id, (SELECT o.contract_id FROM sales_documents o WHERE o.id = d.original_id)) IN (SELECT id FROM k WHERE k.project_id = p.id)), 0)::text AS billed,
             coalesce((SELECT sum(d.total - d.prepaid_amount - d.retention_amount
-                                 - coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'credit_note'), 0)
-                                 - coalesce((SELECT sum(x.amount) FROM customer_receipts x WHERE x.document_id = d.id), 0))
-                        FROM sales_documents d JOIN k ON k.id = d.contract_id WHERE k.project_id = p.id AND d.kind = 'invoice'), 0)::text AS receivable,
-            coalesce((SELECT sum(coalesce((SELECT sum(i.retention_current) FROM ipcs i WHERE i.contract_id = k.id AND i.status = 'invoiced'), 0)
-                                 - coalesce((SELECT sum(x.amount) FROM retention_releases x WHERE x.contract_id = k.id), 0)) FROM k WHERE k.project_id = p.id), 0)::text AS retention,
+                                 - coalesce((SELECT sum(n.total) FROM sales_documents n WHERE n.original_id = d.id AND n.kind = 'credit_note' AND n.issue_date <= $1), 0)
+                                 - coalesce((SELECT sum(x.amount) FROM customer_receipts x WHERE x.document_id = d.id AND x.received_on <= $1), 0))
+                        FROM sales_documents d JOIN k ON k.id = d.contract_id WHERE k.project_id = p.id AND d.kind = 'invoice' AND d.issue_date <= $1), 0)::text AS receivable,
+            coalesce((SELECT sum(coalesce((SELECT sum(i.retention_current) FROM ipcs i JOIN sales_documents d ON d.id = i.sales_document_id
+                                            WHERE i.contract_id = k.id AND i.status = 'invoiced' AND d.issue_date <= $1), 0)
+                                 - coalesce((SELECT sum(x.amount) FROM retention_releases x WHERE x.contract_id = k.id AND x.released_on <= $1), 0)) FROM k WHERE k.project_id = p.id), 0)::text AS retention,
             (coalesce((SELECT sum((i.quantity - i.received_quantity) * i.unit_price) FROM purchase_items i JOIN purchase_orders o ON o.id = i.purchase_order_id JOIN locations l ON l.id = o.location_id
                         WHERE l.project_id = p.id AND o.status IN ('approved', 'partially_received') AND i.quantity > i.received_quantity), 0)
              + coalesce((SELECT sum(s.value + coalesce((SELECT sum(vl.quantity * vl.rate) FROM variation_lines vl JOIN variations v ON v.id = vl.variation_id WHERE v.contract_id = s.id AND v.status = 'approved'), 0)

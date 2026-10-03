@@ -247,3 +247,22 @@ test("handover: DLP end by calendar months; what blocks the final acceptance", (
   assert.equal(finalAcceptanceBlockers({ openItems: 2, ipcsInProgress: 1, dlpEndsOn: "2026-06-01", date: "2026-05-01", earlyReason: null }).length, 3);
   assert.equal(finalAcceptanceBlockers({ openItems: 0, ipcsInProgress: 0, dlpEndsOn: "2026-06-01", date: "2026-05-01", earlyReason: "موافقة المالك" }).length, 0);
 });
+
+test("review fixes: the XML scan is linear on hostile input; EAC never below the cost spent", () => {
+  const hostile = `<Tasks>${"<Task>".repeat(200_000)}</Tasks>`;
+  const t0 = performance.now();
+  assert.deepEqual(parseMspdi(hostile), []);
+  assert.ok(performance.now() - t0 < 500, "no quadratic scan");
+  const acts = [{ start: "2026-01-01", finish: "2026-01-31", budget: 0, pctComplete: 0 }];
+  assert.equal(earnedValue(acts, { bac: h(1_000_000), ac: h(1_300_000), date: "2026-01-15" }).eac, h(2_300_000), "spent plus the work still to do");
+});
+
+import { costForecast } from "../src/lib/contracting/evm.ts";
+test("cost control: an open order spending a WBS budget is not counted on top of it", () => {
+  // Budget on (WBS-1, MAT) 1000, nothing spent; an open order of 800 (commitments carry no WBS).
+  assert.deepEqual(costForecast([{ code: "MAT", budget: 1000, actual: 0, committed: 0 }, { code: "MAT", budget: 0, actual: 0, committed: 800 }]), [1000, 0]);
+  // Commitments beyond the remaining budget show as the overrun.
+  assert.deepEqual(costForecast([{ code: "MAT", budget: 1000, actual: 400, committed: 0 }, { code: "MAT", budget: 0, actual: 0, committed: 900 }]), [1000, 300]);
+  // Another code is independent.
+  assert.deepEqual(costForecast([{ code: "LAB", budget: 500, actual: 600, committed: 0 }]), [600]);
+});

@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db } from "../../db/pool.ts";
-import { cashFlow, earnedValue, plannedCurve, type Activity } from "../../lib/contracting/evm.ts";
+import { cashFlow, costForecast, earnedValue, plannedCurve, type Activity } from "../../lib/contracting/evm.ts";
 import { parseMspdi, parseXer, type ImportedActivity } from "../../lib/contracting/scheduleImport.ts";
 import { AppError, badRequest, notFound } from "../../lib/errors.ts";
+import { isoDate } from "../../lib/calendar.ts";
 import { auditTenant, isUuid, requireTenant, tenantTx } from "../../plugins/auth.ts";
 import { today } from "../restaurants/batches.ts";
 
@@ -12,7 +13,7 @@ import { today } from "../restaurants/batches.ts";
 // the control baseline; actuals come from the ledger (the project's cost center); commitments from open purchase
 // orders of its site stores and the uncertified part of its subcontracts. All figures are computed here.
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح");
+const date = isoDate;
 const conflict = (m: string, code = "invalid_state") => new AppError(409, code, m);
 const h = (v: string | number | null | undefined) => Math.round(Number(v ?? 0) * 100);
 const r = (v: number) => v / 100;
@@ -20,13 +21,13 @@ const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 const monthEnd = (p: string) => new Date(Date.UTC(Number(p.slice(0, 4)), Number(p.slice(5, 7)), 0)).toISOString().slice(0, 10);
 
 interface ActRow { id: string; parent_id: string | null; code: string; name: string; is_summary: boolean; start: string | null; finish: string | null; budget: string; pct: string;
-  actual_start: string | null; actual_finish: string | null; wbs_id: string | null; sort: number }
+  actual_start: string | null; actual_finish: string | null; wbs_id: string | null; sort: number; removed: boolean }
 export async function activities(db: Db, projectId: string) {
   return (await db.query<ActRow>(
     `SELECT id, parent_id, code, name, is_summary, start_date::text AS start, finish_date::text AS finish, budget::text, pct_complete::text AS pct,
-            actual_start::text, actual_finish::text, wbs_id, sort FROM schedule_activities WHERE project_id = $1 ORDER BY sort, code`, [projectId])).rows;
+            actual_start::text, actual_finish::text, wbs_id, sort, removed FROM schedule_activities WHERE project_id = $1 ORDER BY sort, code`, [projectId])).rows;
 }
-export const leaves = (rows: ActRow[]): Activity[] => rows.filter((a) => !a.is_summary && a.start && a.finish)
+export const leaves = (rows: ActRow[]): Activity[] => rows.filter((a) => !a.is_summary && !a.removed && a.start && a.finish)
   .map((a) => ({ start: a.start!, finish: a.finish!, budget: h(a.budget), pctComplete: Number(a.pct) }));
 
 /** The project's cost to date from the ledger: expenses on its cost center, not the contra or close entries. */
@@ -79,7 +80,7 @@ export default async function controlRoutes(app: FastifyInstance) {
       return {
         today: t,
         items: walk(null, 0).map((a) => ({ id: a.id, parentId: a.parent_id, code: a.code, name: a.name, isSummary: a.is_summary, depth: a.depth, start: a.start, finish: a.finish,
-          budget: Number(a.budget), pctComplete: Number(a.pct), actualStart: a.actual_start, actualFinish: a.actual_finish, wbsId: a.wbs_id,
+          budget: Number(a.budget), pctComplete: Number(a.pct), actualStart: a.actual_start, actualFinish: a.actual_finish, wbsId: a.wbs_id, removed: a.removed,
           // Behind: the plan says it should have started or finished by today and it has not.
           late: !a.is_summary && ((a.finish! < t && Number(a.pct) < 100) || (a.start! < t && !a.actual_start && Number(a.pct) === 0)) })),
       };
@@ -119,7 +120,11 @@ export default async function controlRoutes(app: FastifyInstance) {
         ids.set(a.code, row.id);
       }
       for (const a of acts) await db.query("UPDATE schedule_activities SET parent_id = $2 WHERE id = $1", [ids.get(a.code), a.parentCode ? ids.get(a.parentCode) ?? null : null]);
-      // Activities no longer in the programme go, unless the site reported progress on them.
+      // Activities no longer in the programme go, unless the site reported progress on them: those stay, detached
+      // from the old tree (its summaries are deleted) and flagged removed, so earned value counts them no more.
+      await db.query("UPDATE schedule_activities SET removed = false WHERE id = ANY($1::uuid[])", [[...ids.values()]]);
+      await db.query(`UPDATE schedule_activities SET parent_id = NULL, removed = true
+                       WHERE project_id = $1 AND NOT (id = ANY($2::uuid[])) AND (pct_complete > 0 OR actual_start IS NOT NULL)`, [id, [...ids.values()]]);
       const removed = await db.query("DELETE FROM schedule_activities WHERE project_id = $1 AND NOT (id = ANY($2::uuid[])) AND pct_complete = 0 AND actual_start IS NULL",
         [id, [...ids.values()]]);
       await auditTenant(db, req, "schedule.imported", "project", id, { activities: acts.length, removed: removed.rowCount });
@@ -135,6 +140,7 @@ export default async function controlRoutes(app: FastifyInstance) {
     if (b.pctComplete > 0 && !b.actualStart) throw badRequest("أدخل تاريخ البدء الفعلي");
     if (b.actualFinish && b.pctComplete < 100) throw badRequest("النشاط المنتهي إنجازه 100%");
     if ((b.actualStart && b.actualStart > today()) || (b.actualFinish && b.actualFinish > today())) throw badRequest("التاريخ الفعلي في المستقبل");
+    if (b.actualStart && b.actualFinish && b.actualFinish < b.actualStart) throw badRequest("الانتهاء الفعلي قبل البدء");
     await tenantTx(req, async (db) => {
       const r = await db.query("UPDATE schedule_activities SET pct_complete = $2, actual_start = $3, actual_finish = $4, progress_at = now() WHERE id = $1 AND NOT is_summary",
         [id, b.pctComplete, b.actualStart, b.actualFinish]);
@@ -209,12 +215,10 @@ export default async function controlRoutes(app: FastifyInstance) {
                 coalesce((SELECT sum(v) FROM c WHERE c.wbs_id IS NOT DISTINCT FROM k.wbs_id AND c.cost_code_id IS NOT DISTINCT FROM k.cost_code_id), 0)::text AS committed
            FROM keys k LEFT JOIN cost_codes cc ON cc.id = k.cost_code_id LEFT JOIN wbs_nodes w ON w.id = k.wbs_id
           ORDER BY cc.code NULLS LAST, w.code NULLS FIRST`, [id, asOf])).rows;
-      const lines = rows.map((x) => {
-        const budget = h(x.budget), actual = h(x.actual), committed = Math.max(0, h(x.committed));
-        const forecast = actual + Math.max(committed, budget - actual);
-        return { costCodeId: x.code_id, costCode: x.code ?? "—", costName: x.name ?? "غير مصنّف", wbsId: x.wbs_id, wbs: x.wbs, budget: r(budget), actual: r(actual),
-          committed: r(committed), forecast: r(forecast), variance: r(budget - forecast) };
-      }).filter((l) => l.budget || l.actual || l.committed);
+      const f = costForecast(rows.map((x) => ({ code: x.code_id ?? "", budget: h(x.budget), actual: h(x.actual), committed: Math.max(0, h(x.committed)) })));
+      const lines = rows.map((x, i) => ({ costCodeId: x.code_id, costCode: x.code ?? "—", costName: x.name ?? "غير مصنّف", wbsId: x.wbs_id, wbs: x.wbs,
+        budget: r(h(x.budget)), actual: r(h(x.actual)), committed: r(Math.max(0, h(x.committed))), forecast: r(f[i]!), variance: r(h(x.budget) - f[i]!) }))
+        .filter((l) => l.budget || l.actual || l.committed);
       const sum = (k: "budget" | "actual" | "committed" | "forecast" | "variance") => Math.round(lines.reduce((a, l) => a + l[k] * 100, 0)) / 100;
       return { asOf, lines, totals: { budget: sum("budget"), actual: sum("actual"), committed: sum("committed"), forecast: sum("forecast"), variance: sum("variance") } };
     }, { readOnly: true });
@@ -246,7 +250,10 @@ export default async function controlRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     if (!isUuid(id)) throw notFound();
     const b = z.object({ period: z.string().regex(PERIOD, "الشهر بصيغة YYYY-MM") }).parse(req.body);
-    if (b.period >= today().slice(0, 7)) throw badRequest("تُثبَّت القيمة المكتسبة لشهر انتهى");
+    // The progress on record is today's, so only the month just ended is snapshotted: an older month would pair its
+    // cost with months of later progress, and the row is permanent.
+    const prev = new Date(`${today().slice(0, 7)}-01T00:00:00Z`); prev.setUTCMonth(prev.getUTCMonth() - 1);
+    if (b.period !== prev.toISOString().slice(0, 7)) throw badRequest(`يُثبَّت الشهر المنتهي للتو فقط (${prev.toISOString().slice(0, 7)})، والإنجاز المسجل هو إنجاز اليوم`);
     return tenantTx(req, async (db) => {
       const end = monthEnd(b.period);
       const acts = leaves(await activities(db, id));

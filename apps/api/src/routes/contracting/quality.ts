@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Db } from "../../db/pool.ts";
 import { daysLate, RECORDABLE, safetyRates } from "../../lib/contracting/siteQuality.ts";
 import { AppError, badRequest, notFound } from "../../lib/errors.ts";
+import { isoDate } from "../../lib/calendar.ts";
 import { auditTenant, isUuid, requireTenant, tenantTx } from "../../plugins/auth.ts";
 import { today } from "../restaurants/batches.ts";
 import { projectOpen } from "./site.ts";
@@ -11,7 +12,7 @@ import { projectOpen } from "./site.ts";
 // and materials (MIR) with the consultant's result, NCRs, RFIs linked to the variation or claim they led to,
 // incidents and permits to work. The safety rates are measured on the man-hours of the submitted daily reports.
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح");
+const date = isoDate;
 const optUuid = z.string().uuid().nullable().optional().transform((v) => v ?? null);
 const optText = (max: number) => z.string().trim().max(max).nullable().optional().transform((v) => v || null);
 const conflict = (m: string, code = "invalid_state") => new AppError(409, code, m);

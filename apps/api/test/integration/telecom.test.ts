@@ -74,6 +74,8 @@ describe("contracting: telecom rollout", () => {
     assert.equal(await code("POST", `/t/telecom-sites/${s3}/advance`, { to: "on_air", date: back(5) }), "validation_failed", "no scope, no on air");
     await advance(s1, "survey", back(30));
     await advance(s1, "installation", back(20));
+    assert.equal(await code("POST", `/t/telecom-sites/${s1}/advance`, { to: "cancelled", date: back(19), note: "إلغاء" }), "invalid_transition", "installation is billable: no cancelling");
+    assert.equal(await code("PUT", `/t/telecom-sites/${s1}/items`, { items: [{ boqItemId: t1, quantity: 2 }] }), "site_scope_frozen", "scope frozen from installation");
     assert.equal(await code("POST", `/t/telecom-sites/${s1}/advance`, { to: "survey", date: back(19) }), "invalid_transition", "no going back");
     assert.equal(await code("POST", `/t/telecom-sites/${s1}/advance`, { to: "pac", date: back(19), reference: "PAC-1" }), "invalid_transition", "PAC after on air");
     await advance(s1, "on_air", back(15));

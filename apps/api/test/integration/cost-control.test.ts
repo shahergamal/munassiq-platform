@@ -59,6 +59,12 @@ describe("contracting: schedule and cost control", () => {
     const kept = s.items.find((a: { code: string }) => a.code === "A100");
     assert.equal(kept.pctComplete, 100);
     assert.equal(kept.late, false);
+    // A programme without A100 (it has progress): A100 stays, detached and out of earned value; its summary goes.
+    const without = multipart(xer("0").split("\r\n").filter((l) => !l.startsWith("%R\tA100")).join("\r\n"), "programme.xer");
+    expectStatus(await call(app, owner, "POST", `/t/projects/${p}/schedule/import`, { tenant: t, body: without.payload, headers: without.headers }), 200, "re-import without A100");
+    const detached = (await get(`/t/projects/${p}/schedule`)).items.find((a: { code: string }) => a.code === "A100");
+    assert.deepEqual([detached.removed, detached.parentId, detached.pctComplete], [true, null, 100]);
+    expectStatus(await call(app, owner, "POST", `/t/projects/${p}/schedule/import`, { tenant: t, body: again.payload, headers: again.headers }), 200, "back in the programme");
     const bad = multipart("not a schedule", "x.xml");
     expectStatus(await call(app, owner, "POST", `/t/projects/${p}/schedule/import`, { tenant: t, body: bad.payload, headers: bad.headers }), 422, "unreadable");
   });
@@ -99,6 +105,7 @@ describe("contracting: schedule and cost control", () => {
     assert.equal(snap.ac, 250_000);
     assert.equal((await call(app, owner, "POST", `/t/projects/${p}/evm/snapshot`, { tenant: t, idem: true, body: { period: m1 } })).body.error?.code, "duplicate");
     expectStatus(await call(app, owner, "POST", `/t/projects/${p}/evm/snapshot`, { tenant: t, idem: true, body: { period: month(0) } }), 422, "current month");
+    expectStatus(await call(app, owner, "POST", `/t/projects/${p}/evm/snapshot`, { tenant: t, idem: true, body: { period: m2 } }), 422, "an older month would pair its cost with today's progress");
     const after = await get(`/t/projects/${p}/evm`);
     assert.equal(after.curve.find((x: { period: string }) => x.period === m1).ac, 250_000);
     await assert.rejects(ownerPool.query("UPDATE evm_snapshots SET ac = 0 WHERE tenant_id = $1", [t]), "snapshots are append-only");

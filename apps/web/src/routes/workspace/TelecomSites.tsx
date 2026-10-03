@@ -91,7 +91,7 @@ export function TelecomSitesPage() {
             ]}
             actions={writable ? (r) => <>
               {edit && !["fac", "cancelled"].includes(r.status) && <Button size="sm" variant="ghost" onClick={() => setEditing(r)}>تعديل</Button>}
-              {edit && <Button size="sm" variant="ghost" onClick={() => setScope(r)}>{["on_air", "pac", "fac", "cancelled"].includes(r.status) ? "النطاق والسجل" : "النطاق"}</Button>}
+              {edit && <Button size="sm" variant="ghost" onClick={() => setScope(r)}>{["installation", "on_air", "pac", "fac", "cancelled"].includes(r.status) ? "النطاق والسجل" : "النطاق"}</Button>}
               {can("telecom_sites.advance") && !["fac", "cancelled"].includes(r.status) && <Button size="sm" variant="ghost" onClick={() => setMoving(r)}>نقل الحالة</Button>}</> : undefined} />
         </section>
       </>}
@@ -110,7 +110,7 @@ type Main = { id: string; number: string; title: string };
 function EditSiteDialog({ site, contracts, onClose }: { site: Site; contracts: Main[]; onClose: () => void }) {
   const { tenantId } = useTenant();
   const invalidate = useInvalidate(tenantId);
-  const billed = ["on_air", "pac", "fac"].includes(site.status);
+  const billed = ["installation", "on_air", "pac", "fac"].includes(site.status);
   const [v, setV] = useState({ name: site.name, region: site.region ?? "", siteType: site.siteType, contractId: site.contractId ?? "", holdReason: site.holdReason ?? "" });
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -253,7 +253,7 @@ function ScopeDialog({ site, onClose }: { site: Site; onClose: () => void }) {
   const invalidate = useInvalidate(tenantId);
   const toast = useToast();
   const q = useQuery({ queryKey: ["t", tenantId, "contracting", "site", site.id], queryFn: () => api<SiteDetail>("GET", `/t/telecom-sites/${site.id}`, { tenant: tenantId }) });
-  const frozen = ["on_air", "pac", "fac", "cancelled"].includes(site.status);
+  const frozen = ["installation", "on_air", "pac", "fac", "cancelled"].includes(site.status);
   const [qty, setQty] = useState<Record<string, string> | null>(null);
   useEffect(() => { if (q.data && !qty) setQty(Object.fromEntries(q.data.items.map((i) => [i.boqItemId, String(i.quantity)]))); }, [q.data, qty]);
   const [error, setError] = useState<unknown>(null);
@@ -275,7 +275,7 @@ function ScopeDialog({ site, onClose }: { site: Site; onClose: () => void }) {
       {q.isError && <ErrorState error={q.error} onRetry={() => void q.refetch()} />}
       {d && !d.contractId && <p className="field-error">الموقع غير مربوط بعقد: اربطه من «تعديل» لتظهر بنود جدول الأسعار.</p>}
       {d && qty && d.rateCard.length > 0 && <>
-        <p className="muted">{frozen ? "النطاق ثابت بعد التشغيل: ما فوتر لا يتغير." : "الكميات من جدول أسعار العقد. اترك البند فارغاً إن لم يكن في نطاق الموقع."} القيمة {money(total)}.</p>
+        <p className="muted">{frozen ? "النطاق ثابت من التركيب: ما فوتر لا يتغير." : "الكميات من جدول أسعار العقد. اترك البند فارغاً إن لم يكن في نطاق الموقع."} القيمة {money(total)}.</p>
         <div className="table-wrap"><table className="data-table"><caption className="sr-only">نطاق الموقع</caption>
           <thead><tr><th scope="col">البند</th><th scope="col">الوحدة</th><th scope="col" className="num">السعر</th><th scope="col" className="num">الكمية</th></tr></thead>
           <tbody>{d.rateCard.map((r) => <tr key={r.id}><td className="wrap"><Ref>{r.code}</Ref> {r.description}</td><td>{r.unit}</td><td className="num">{money(r.rate)}</td>
@@ -298,7 +298,7 @@ function AdvanceDialog({ site, onClose }: { site: Site; onClose: () => void }) {
   const at = FLOW.indexOf(site.status as (typeof FLOW)[number]);
   const options = [
     ...FLOW.filter((s, i) => i > at && (s !== "pac" || site.status === "on_air") && (s !== "fac" || site.status === "pac") && (i <= FLOW.indexOf("on_air") || s === FLOW[at + 1])),
-    ...(at < FLOW.indexOf("on_air") ? ["cancelled"] : [])];
+    ...(at < FLOW.indexOf("installation") ? ["cancelled"] : [])];
   const [v, setV] = useState({ to: options[0] ?? "", date: isoDay(), reference: "", note: "" });
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -320,7 +320,7 @@ function AdvanceDialog({ site, onClose }: { site: Site; onClose: () => void }) {
         {needsRef && <TextField label={v.to === "pac" ? "رقم شهادة الاستلام الابتدائي" : "رقم شهادة الاستلام النهائي"} required dir="ltr" value={v.reference} onChange={(e) => setV({ ...v, reference: e.target.value })} maxLength={80} />}
       </div>
       <TextField label={v.to === "cancelled" ? "سبب الإلغاء" : "ملاحظة"} required={v.to === "cancelled"} optional={v.to !== "cancelled"} value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} maxLength={500} />
-      {["on_air", "pac", "fac"].includes(v.to) && <p className="muted acc-small">ببلوغ هذه المرحلة تدخل نسبتها من قيمة الموقع في المستخلص التالي (شروط الفوترة).</p>}
+      {["installation", "on_air", "pac", "fac"].includes(v.to) && <p className="muted acc-small">ببلوغ هذه المرحلة تدخل نسبتها من قيمة الموقع في المستخلص التالي (شروط الفوترة).</p>}
       <FormError error={error} />
       <p className="muted acc-small">العقد: {site.contractNumber ?? "—"} · <Link to="/w/$tenantId/contracting/projects" params={{ tenantId }}>المشاريع والعقود</Link></p>
     </Dialog>

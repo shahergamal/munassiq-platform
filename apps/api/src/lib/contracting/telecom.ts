@@ -10,11 +10,11 @@ const rank = (s: SiteStatus) => (s === "cancelled" ? -1 : SITE_FLOW.indexOf(s));
 /**
  * Whether a site may move from one state to another. Forward only: steps that do not apply to a site (a rooftop has
  * no civil works) may be skipped up to on air, but acceptance is in order: PAC after on air, FAC after PAC. A site is
- * cancelled only before it is on air; a cancelled or finally accepted site does not move.
+ * cancelled only before installation (the first billable milestone); a cancelled or finally accepted site does not move.
  */
 export function canMove(from: SiteStatus, to: SiteStatus): { ok: true } | { ok: false; reason: string } {
   if (from === "cancelled" || from === "fac") return { ok: false, reason: "الموقع في حالة نهائية" };
-  if (to === "cancelled") return rank(from) < rank("on_air") ? { ok: true } : { ok: false, reason: "لا يُلغى موقع بعد تشغيله: الإلغاء بعده تسوية في العقد" };
+  if (to === "cancelled") return rank(from) < rank("installation") ? { ok: true } : { ok: false, reason: "لا يُلغى موقع بعد تركيبه: قد يكون فوتر، والإلغاء بعده تسوية بأمر تغيير أو إشعار دائن" };
   if (rank(to) <= rank(from)) return { ok: false, reason: "الحالة تتقدم ولا ترجع" };
   if (to === "pac" && from !== "on_air") return { ok: false, reason: "الاستلام الابتدائي بعد التشغيل" };
   if (to === "fac" && from !== "pac") return { ok: false, reason: "الاستلام النهائي بعد الابتدائي" };

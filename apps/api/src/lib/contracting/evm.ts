@@ -35,7 +35,9 @@ export function earnedValue(acts: Activity[], p: { bac: number; ac: number; date
   const pv = Math.round(acts.reduce((s, a, i) => s + w[i]! * plannedPct(a, p.date), 0));
   const ev = Math.round(acts.reduce((s, a, i) => s + w[i]! * Math.min(1, Math.max(0, a.pctComplete / 100)), 0));
   const cpi = ratio(ev, p.ac);
-  const eac = cpi && cpi > 0 ? Math.round(bac / cpi) : bac;
+  // No earned value yet (CPI 0 or unknown): the cost spent plus the work still to do at budget. Never below what is
+  // already spent.
+  const eac = Math.max(p.ac, cpi && cpi > 0 ? Math.round(bac / cpi) : p.ac + (bac - ev));
   return { bac, pv, ev, ac: p.ac, sv: ev - pv, cv: ev - p.ac, spi: ratio(ev, pv), cpi, eac, etc: eac - p.ac, vac: bac - eac,
     tcpi: bac - p.ac > 0 ? Math.round(((bac - ev) / (bac - p.ac)) * 1000) / 1000 : null };
 }
@@ -88,5 +90,26 @@ export function cashFlow(p: { curve: { period: string; pv: number }[]; from: str
     const o = Math.round(outflow.get(m) ?? 0);
     cumulative += i - o;
     return { period: m, inflow: i, outflow: o, net: i - o, cumulative };
+  });
+}
+
+/**
+ * The forecast at completion of each cost-control line (halalas). It is decided per cost code: actual + the larger of
+ * what is committed and what the budget still leaves (summed over the code's WBS elements). Commitments carry no WBS,
+ * so a line-by-line max would count an open order on top of the budget it is spending. Each line shows its own
+ * remaining budget; the lines with commitments add only what the code's commitments exceed its remaining budget by.
+ */
+export function costForecast(lines: { code: string; budget: number; actual: number; committed: number }[]) {
+  const remaining = new Map<string, number>(), committed = new Map<string, number>(), withCommitment = new Map<string, number>();
+  for (const l of lines) {
+    remaining.set(l.code, (remaining.get(l.code) ?? 0) + Math.max(0, l.budget - l.actual));
+    committed.set(l.code, (committed.get(l.code) ?? 0) + l.committed);
+    if (l.committed) withCommitment.set(l.code, (withCommitment.get(l.code) ?? 0) + l.committed);
+  }
+  return lines.map((l) => {
+    const excess = Math.max(0, committed.get(l.code)! - remaining.get(l.code)!);
+    // The excess goes to the commitment lines in proportion to what each commits.
+    const share = l.committed ? Math.round((excess * l.committed) / withCommitment.get(l.code)!) : 0;
+    return l.actual + Math.max(0, l.budget - l.actual) + share;
   });
 }

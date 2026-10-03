@@ -4,6 +4,7 @@ import { z } from "zod";
 import { nextRevision, sniffMime } from "../../lib/contracting/siteQuality.ts";
 import { AppError, badRequest, notFound } from "../../lib/errors.ts";
 import { systemPool } from "../../db/pool.ts";
+import { isoDate } from "../../lib/calendar.ts";
 import { auditTenant, isUuid, requireTenant, tenantTx } from "../../plugins/auth.ts";
 import { today } from "../restaurants/batches.ts";
 import { projectOpen } from "./site.ts";
@@ -13,7 +14,7 @@ import { projectOpen } from "./site.ts";
 // a revision the consultant reviews once (A–D). A transmittal records which revisions went to whom and why. A daily
 // report is a draft until submitted, then final; its manpower hours are the safety man-hours.
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح");
+const date = isoDate;
 const optText = (max: number) => z.string().trim().max(max).nullable().optional().transform((v) => v || null);
 const conflict = (m: string, code = "invalid_state") => new AppError(409, code, m);
 const MAX_FILE = 15 * 1024 * 1024;
@@ -233,9 +234,11 @@ export default async function documentRoutes(app: FastifyInstance) {
     }).parse(req.body);
     return tenantTx(req, async (db) => {
       await projectOpen(db, id);
-      const existing = (await db.query<{ id: string; status: string }>("SELECT id, status FROM daily_reports WHERE project_id = $1 AND report_date = $2 FOR UPDATE", [id, day])).rows[0];
-      if (existing?.status === "submitted") throw conflict("التقرير مُقدَّم ولا يُعدَّل", "daily_report_final");
-      const rid = existing?.id ?? (await db.query<{ id: string }>("INSERT INTO daily_reports (tenant_id, project_id, report_date, created_by) VALUES (app_tenant_id(), $1, $2, app_user_id()) RETURNING id", [id, day])).rows[0]!.id;
+      // Two people saving the same day's first draft at once: one row, the second waits for it.
+      await db.query("INSERT INTO daily_reports (tenant_id, project_id, report_date, created_by) VALUES (app_tenant_id(), $1, $2, app_user_id()) ON CONFLICT (tenant_id, project_id, report_date) DO NOTHING", [id, day]);
+      const existing = (await db.query<{ id: string; status: string }>("SELECT id, status FROM daily_reports WHERE project_id = $1 AND report_date = $2 FOR UPDATE", [id, day])).rows[0]!;
+      if (existing.status === "submitted") throw conflict("التقرير مُقدَّم ولا يُعدَّل", "daily_report_final");
+      const rid = existing.id;
       await db.query("UPDATE daily_reports SET weather = $2, temperature = $3, work_done = $4, issues = $5 WHERE id = $1", [rid, b.weather, b.temperature, b.workDone, b.issues]);
       await db.query("DELETE FROM daily_report_manpower WHERE report_id = $1", [rid]);
       await db.query("DELETE FROM daily_report_equipment WHERE report_id = $1", [rid]);

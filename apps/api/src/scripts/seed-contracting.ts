@@ -221,7 +221,7 @@ async function control() {
   const codes = (await call<{ costCodes: { id: string; code: string }[] }>("GET", "/t/contracting/reference")).costCodes;
   const budget: Record<string, number> = { MAT: 1_500_000, LAB: 800_000, EQP: 300_000, SUB: 1_500_000, OVH: 250_000 };
   await call("PUT", `/t/projects/${towerId}/budget`, { lines: codes.filter((c) => budget[c.code]).map((c) => ({ costCodeId: c.id, amount: budget[c.code] })) });
-  for (const back of [2, 1]) await call("POST", `/t/projects/${towerId}/evm/snapshot`, { period: m(-back) }).catch(() => undefined);
+  await call("POST", `/t/projects/${towerId}/evm/snapshot`, { period: m(-1) }).catch(() => undefined); // the month just ended only
 }
 
 /** C10: the tower's site records: an ITP, inspections (one rejected with its NCR and re-inspection), an RFI, daily reports, safety and a reviewed drawing. */

@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Db } from "../../db/pool.ts";
 import { billableShare, canMove, checkTerms, MILESTONES, quantitiesToDate, SITE_FLOW, type Milestone, type SiteStatus } from "../../lib/contracting/telecom.ts";
 import { AppError, badRequest, notFound } from "../../lib/errors.ts";
+import { isoDate } from "../../lib/calendar.ts";
 import { auditTenant, isUuid, requireTenant, tenantTx } from "../../plugins/auth.ts";
 import { today } from "../restaurants/batches.ts";
 import { cellText } from "../restaurants/import.ts";
@@ -15,7 +16,7 @@ import { projectOpen } from "./site.ts";
 // (PAC and FAC with their certificates). The contract's milestone terms turn the states into billable quantities,
 // which fill a draft IPC: the invoice still goes through the IPC, its approval and ZATCA as for any contract.
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "تاريخ غير صالح");
+const date = isoDate;
 const optText = (max: number) => z.string().trim().max(max).nullable().optional().transform((v) => v || null);
 const conflict = (m: string, code = "invalid_state") => new AppError(409, code, m);
 const SITE_TYPES = ["greenfield", "rooftop", "indoor", "small_cell", "fiber", "upgrade"] as const;
@@ -153,7 +154,7 @@ export default async function telecomRoutes(app: FastifyInstance) {
       const s = (await db.query<{ project_id: string; status: string; contract_id: string | null }>("SELECT project_id, status, contract_id FROM telecom_sites WHERE id = $1 FOR UPDATE", [id])).rows[0];
       if (!s) throw notFound();
       await checkContract(db, s.project_id, b.contractId);
-      if (b.contractId !== s.contract_id && ["on_air", "pac", "fac"].includes(s.status)) throw conflict("لا يتغير عقد موقع بدأت فوترته");
+      if (b.contractId !== s.contract_id && ["installation", "on_air", "pac", "fac"].includes(s.status)) throw conflict("لا يتغير عقد موقع بلغ التركيب: قد يكون فوتر");
       if (b.holdReason && ["fac", "cancelled"].includes(s.status)) throw conflict("الموقع في حالة نهائية");
       await db.query("UPDATE telecom_sites SET name = $2, region = $3, site_type = $4, latitude = $5, longitude = $6, contract_id = $7, hold_reason = $8 WHERE id = $1",
         [id, b.name, b.region, b.siteType, b.latitude, b.longitude, b.contractId, b.holdReason]);
@@ -192,7 +193,7 @@ export default async function telecomRoutes(app: FastifyInstance) {
       const s = (await db.query<{ contract_id: string | null; status: string }>("SELECT contract_id, status FROM telecom_sites WHERE id = $1 FOR UPDATE", [id])).rows[0];
       if (!s) throw notFound();
       if (!s.contract_id) throw badRequest("اربط الموقع بالعقد أولاً: بنوده من جدول أسعار العقد");
-      if (["on_air", "pac", "fac", "cancelled"].includes(s.status)) throw conflict("نطاق الموقع ثابت بعد تشغيله", "site_scope_frozen");
+      if (["installation", "on_air", "pac", "fac", "cancelled"].includes(s.status)) throw conflict("نطاق الموقع ثابت من التركيب: قد يكون فوتر", "site_scope_frozen");
       const v = await currentVersion(db, s.contract_id);
       if (b.items.length) {
         const ok = (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM boq_items WHERE id = ANY($1::uuid[]) AND version_id = $2 AND NOT is_section", [b.items.map((i) => i.boqItemId), v?.id])).rows[0]!.n;
@@ -219,7 +220,7 @@ export default async function telecomRoutes(app: FastifyInstance) {
       // The planned date is when the site was registered, not an event on site: a rollout taken over mid-way records
       // its earlier steps with their real dates.
       if (s.status !== "planned" && b.date < s.status_date) throw badRequest(`التاريخ قبل الحالة الحالية (${s.status_date})`);
-      if (["on_air", "pac", "fac"].includes(b.to) && (!s.contract_id || !s.items)) throw badRequest("موقع بلا عقد أو بلا بنود لا يُشغَّل: حدد نطاقه من جدول الأسعار");
+      if (["installation", "on_air", "pac", "fac"].includes(b.to) && (!s.contract_id || !s.items)) throw badRequest("موقع بلا عقد أو بلا بنود لا يُركَّب: حدد نطاقه من جدول الأسعار أولاً، فهو يثبت من التركيب");
       if ((b.to === "pac" || b.to === "fac") && !b.reference) throw badRequest(b.to === "pac" ? "أدخل رقم شهادة الاستلام الابتدائي" : "أدخل رقم شهادة الاستلام النهائي");
       if (b.to === "cancelled" && !b.note) throw badRequest("اكتب سبب الإلغاء");
       const set = b.to === "pac" ? ", pac_ref = $4, pac_date = $3" : b.to === "fac" ? ", fac_ref = $4, fac_date = $3" : "";
