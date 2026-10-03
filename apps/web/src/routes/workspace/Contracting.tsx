@@ -195,6 +195,7 @@ export function ProjectPage() {
         description={<>{p.specialtyName} · العميل: {text(p.clientName)} · {text(p.location)} · <Status map={PROJECT_STATUS} value={p.status} /></>}
         actions={<>
           <Link to="/w/$tenantId/contracting/projects" params={{ tenantId }} className="btn btn-ghost">كل المشاريع</Link>
+          {can("cost_control.view") && <Link to="/w/$tenantId/contracting/projects/$projectId/control" params={{ tenantId, projectId: p.id }} className="btn">التحكم: البرنامج والتكلفة</Link>}
           {edit && <Button onClick={() => setEditingProject(true)}>تعديل المشروع</Button>}
           {can("contracts.create") && writable && p.contracts.some((c) => c.role === "MAIN" && c.status === "active") && <Button icon={<Plus />} onClick={() => setContractOpen("SUB")}>عقد باطن</Button>}
           {can("contracts.create") && writable && <Button variant="primary" icon={<FileSignature />} onClick={() => setContractOpen("MAIN")}>عقد جديد</Button>}

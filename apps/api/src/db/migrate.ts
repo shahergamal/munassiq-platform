@@ -24,10 +24,16 @@ async function main() {
   const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
   for (const file of files) {
     const sql = await readFile(join(dir, file), "utf8");
-    const checksum = createHash("sha256").update(sql).digest("hex");
+    // Line endings do not change a migration: a Windows checkout (CRLF) and the CI one (LF) are the same file. The
+    // checksum is of the LF form; one recorded from a CRLF checkout before this rule is still recognised.
+    const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+    const lf = sql.replace(/\r\n/g, "\n");
+    const checksum = sha(lf);
     const previous = applied.get(file);
     if (previous) {
-      if (previous !== checksum) throw new Error(`Migration ${file} was modified after being applied. Create a new migration instead.`);
+      if (previous !== checksum && previous !== sha(lf.replace(/\n/g, "\r\n"))) {
+        throw new Error(`Migration ${file} was modified after being applied. Create a new migration instead.`);
+      }
       continue;
     }
     console.log(`applying ${file}`);

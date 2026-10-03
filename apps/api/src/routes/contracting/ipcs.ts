@@ -396,6 +396,7 @@ export default async function ipcRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     if (!isUuid(id)) throw notFound();
     const b = z.object({ supplierInvoice: z.string().trim().min(1).max(60).nullable().optional().transform((v) => v || null), supplierInvoiceDate: date.optional() }).parse(req.body ?? {});
+    if (b.supplierInvoiceDate && b.supplierInvoiceDate > today()) throw badRequest("تاريخ فاتورة مقاول الباطن في المستقبل");
     return tenantTx(req, async (db) => {
       const i = await lockIpc(db, id);
       const c = await loadContract(db, i.contract_id);
@@ -406,7 +407,7 @@ export default async function ipcRoutes(app: FastifyInstance) {
         throw new AppError(422, "supplier_invoice_required", "مقاول الباطن مسجل في الضريبة: أدخل رقم فاتورته الضريبية، فهي سند خصم ضريبة المدخلات");
       }
       await ensureContractingAccounts(db);
-      await db.query("UPDATE ipcs SET status = 'invoiced', supplier_invoice = $2, supplier_invoice_date = $3 WHERE id = $1", [id, b.supplierInvoice, b.supplierInvoiceDate ?? i.period_to]);
+      await db.query("UPDATE ipcs SET status = 'invoiced', supplier_invoice = $2, supplier_invoice_date = $3 WHERE id = $1", [id, b.supplierInvoice, b.supplierInvoiceDate ?? (i.period_to < today() ? i.period_to : today())]);
       await postSubcontractIpc(db, id);
       await auditTenant(db, req, "ipc.recorded", "ipc", id, { supplierInvoice: b.supplierInvoice });
       return { ok: true };

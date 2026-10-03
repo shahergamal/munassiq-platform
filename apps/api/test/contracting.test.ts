@@ -167,3 +167,41 @@ test("review fixes: output progress on the work's value (damages move revenue wi
   const f = computeIpc(work(50_000), terms({ contractValue: h(1_000_000), advanceTaxable: h(400_000) }), { previousGross: 0, retainedToDate: 0, ldToDate: 0 }, { final: true, ldDays: 0 });
   assert.equal(f.advanceRecovery, h(50_000));
 });
+
+// C9: earned value, the S-curve and cash flow.
+import { cashFlow, earnedValue, plannedCurve, plannedPct } from "../src/lib/contracting/evm.ts";
+test("earned value: PV linear on the baseline, EV by progress, the indices", () => {
+  assert.equal(plannedPct({ start: "2026-01-01", finish: "2026-01-10" }, "2026-01-05"), 0.5);
+  const acts = [{ start: "2026-01-01", finish: "2026-01-10", budget: h(100_000), pctComplete: 60 }, { start: "2026-01-11", finish: "2026-01-20", budget: h(100_000), pctComplete: 0 }];
+  const e = earnedValue(acts, { bac: 0, ac: h(80_000), date: "2026-01-10" });
+  assert.deepEqual([e.bac, e.pv, e.ev, e.spi, e.cpi], [h(200_000), h(100_000), h(60_000), 0.6, 0.75]);
+  assert.equal(e.eac, Math.round(h(200_000) / 0.75));
+  // Without budgets the BAC is spread by duration.
+  const d = earnedValue(acts.map((a) => ({ ...a, budget: 0 })), { bac: h(1_000), ac: 0, date: "2026-01-20" });
+  assert.equal(d.pv, h(1_000));
+  assert.deepEqual(plannedCurve(acts, 0).map((c) => c.pv), [h(200_000)]);
+});
+
+test("cash flow: the remaining work on the curve, in after the payment lag, out in the month", () => {
+  const curve = [{ period: "2026-01", pv: 0 }, { period: "2026-02", pv: 50 }, { period: "2026-03", pv: 100 }];
+  const r = cashFlow({ curve, from: "2026-02", months: 3, remainingRevenue: h(1_000), remainingCost: h(800), retentionPct: 10, advanceToRecover: 0, vatPct: 15, inputVatShare: 0, paymentLagMonths: 1 });
+  assert.deepEqual(r.map((m) => [m.inflow, m.outflow]), [[0, h(400)], [h(525), h(400)], [h(525), 0]]);
+  assert.equal(r.at(-1)!.cumulative, h(250));
+});
+
+import { parseMspdi, parseXer } from "../src/lib/contracting/scheduleImport.ts";
+test("programme import: P6 XER (WBS as parents) and MS Project XML (outline as parents)", () => {
+  const xer = ["ERMHDR\t21.12", "%T\tPROJWBS", "%F\twbs_id\tparent_wbs_id\twbs_short_name\twbs_name\tproj_node_flag", "%R\t1\t\tP\tالمشروع\tY", "%R\t2\t1\tSTR\tالهيكل\tN",
+    "%T\tTASK", "%F\ttask_code\ttask_name\twbs_id\ttarget_start_date\ttarget_end_date\tphys_complete_pct\tact_start_date\tact_end_date",
+    "%R\tA100\tحفر\t2\t2026-01-01 08:00\t2026-01-15 17:00\t40\t2026-01-02 08:00\t", "%E"].join("\r\n");
+  const x = parseXer(xer);
+  assert.deepEqual(x.map((a) => [a.code, a.parentCode, a.isSummary, a.start, a.pctComplete, a.actualStart]),
+    [["WBS-STR", null, true, "", 0, null], ["A100", "WBS-STR", false, "2026-01-01", 40, "2026-01-02"]]);
+  const xml = `<Project><Tasks><Task><UID>0</UID><OutlineNumber>0</OutlineNumber><Start>2026-01-01T08:00:00</Start><Finish>2026-02-01T17:00:00</Finish></Task>
+    <Task><UID>1</UID><Name>الأساسات</Name><WBS>1</WBS><OutlineNumber>1</OutlineNumber><Summary>1</Summary><Start>2026-01-01T08:00:00</Start><Finish>2026-01-20T17:00:00</Finish></Task>
+    <Task><UID>2</UID><Name>صب &amp; معالجة</Name><WBS>1.1</WBS><OutlineNumber>1.1</OutlineNumber><Start>2026-01-05T08:00:00</Start><Finish>2026-01-20T17:00:00</Finish><PercentComplete>25</PercentComplete></Task>
+  </Tasks></Project>`;
+  const m = parseMspdi(xml);
+  assert.deepEqual(m.map((a) => [a.code, a.name, a.parentCode, a.isSummary, a.pctComplete]), [["1", "الأساسات", null, true, 0], ["1.1", "صب & معالجة", "1", false, 25]]);
+  assert.throws(() => parseXer("nothing"), /xer_no_tasks/);
+});

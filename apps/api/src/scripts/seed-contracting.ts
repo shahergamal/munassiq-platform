@@ -60,6 +60,7 @@ csrf = ((await login.json()) as { csrfToken: string }).csrfToken;
 const existing = (await call<{ items: { id: string; code: string }[] }>("GET", "/t/projects")).items;
 if (existing.some((p) => p.code === "PRJ-RD7")) {
   await subcontracting();
+  await control();
   console.log(`ready (data already present): ${email} — password in apps/api/.demo-accounts.local`);
   process.exit(0);
 }
@@ -149,6 +150,7 @@ const gov = (await call("POST", "/t/contracts", { projectId: road, number: "AMN-
   pricingModel: "UNIT_PRICE", governingRegime: "GTPL_1440", governmentClient: true, tenderDate: "2025-11-20", value: 0, ldRatePerDay: 1500 })).id as string;
 void gov;
 await subcontracting();
+await control();
 
 console.log(`ready: ${email} — password in apps/api/.demo-accounts.local`);
 
@@ -191,3 +193,25 @@ async function subcontracting() {
 }
 
 function addDays(n: number) { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+/** C9: the tower's programme (an MS Project XML), its budget by cost code, the site's progress and two month snapshots. */
+async function control() {
+  const towerId = (await call<{ items: { id: string; code: string }[] }>("GET", "/t/projects")).items.find((p) => p.code === "PRJ-TWR")!.id;
+  if ((await call<{ items: unknown[] }>("GET", `/t/projects/${towerId}/schedule`)).items.length) return;
+  const m = (n: number) => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 7); };
+  const acts: [string, string, number, number, number][] = [ // outline, name, start month, finish month (offsets), % complete
+    ["1", "الأعمال الإنشائية", -5, 3, 0], ["1.1", "الحفر والإحلال", -5, -4, 100], ["1.2", "الأساسات والقواعد", -4, -2, 100], ["1.3", "الهيكل الخرساني للأدوار", -2, 3, 35],
+    ["2", "أعمال التشطيب", 1, 7, 0], ["2.1", "المباني والبلوك", 1, 4, 0], ["2.2", "اللياسة والدهانات", 3, 7, 0],
+    ["3", "الأعمال الكهروميكانيكية", -1, 8, 0], ["3.1", "التمديدات الكهربائية", -1, 6, 20], ["3.2", "التكييف المركزي", 2, 8, 0]];
+  const tasks = acts.map(([o, name, s, f, pct], i) => `<Task><UID>${i + 1}</UID><Name>${name}</Name><WBS>${o}</WBS><OutlineNumber>${o}</OutlineNumber><Summary>${o.includes(".") ? 0 : 1}</Summary>`
+    + `<Start>${m(s)}-01T08:00:00</Start><Finish>${m(f)}-25T17:00:00</Finish><PercentComplete>${pct}</PercentComplete>${pct ? `<ActualStart>${m(s)}-02T08:00:00</ActualStart>` : ""}`
+    + `${pct === 100 ? `<ActualFinish>${m(f)}-24T17:00:00</ActualFinish>` : ""}</Task>`).join("");
+  const fd = new FormData();
+  fd.append("file", new Blob([`<?xml version="1.0"?><Project xmlns="http://schemas.microsoft.com/project"><Tasks>${tasks}</Tasks></Project>`], { type: "application/xml" }), "tower.xml");
+  const up = await fetch(`${base}/t/projects/${towerId}/schedule/import`, { method: "POST", headers: { cookie, "x-csrf-token": csrf, "x-tenant-id": tenantId }, body: fd });
+  if (!up.ok) throw new Error(`schedule import → ${up.status} ${await up.text()}`);
+  const codes = (await call<{ costCodes: { id: string; code: string }[] }>("GET", "/t/contracting/reference")).costCodes;
+  const budget: Record<string, number> = { MAT: 1_500_000, LAB: 800_000, EQP: 300_000, SUB: 1_500_000, OVH: 250_000 };
+  await call("PUT", `/t/projects/${towerId}/budget`, { lines: codes.filter((c) => budget[c.code]).map((c) => ({ costCodeId: c.id, amount: budget[c.code] })) });
+  for (const back of [2, 1]) await call("POST", `/t/projects/${towerId}/evm/snapshot`, { period: m(-back) }).catch(() => undefined);
+}

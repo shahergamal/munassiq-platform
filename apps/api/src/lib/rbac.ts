@@ -105,6 +105,8 @@ export const CATALOG = [
       act("approve", "اعتماد التأهيل أو إيقافه", { hint: "لا يُسند عقد باطن لمقاول غير معتمد", sensitive: true })] },
     { key: "tenders", sectors: CON, label: "العطاءات والتسعير", actions: [view("وتحليل الأسعار"), create(), edit("البنود والتسعير والتقديم والنتيجة"),
       act("convert", "تحويل العطاء الفائز إلى عقد", { sensitive: true })] },
+    { key: "cost_control", sectors: CON, label: "الجدولة والتحكم في التكلفة", actions: [view("والقيمة المكتسبة والتدفق النقدي"),
+      act("schedule", "استيراد البرنامج الزمني وتحديث الإنجاز"), act("budget", "موازنة المشروع"), act("snapshot", "تثبيت القيمة المكتسبة الشهرية")] },
     { key: "revenue", sectors: CON, label: "الإيراد والأعمال تحت التنفيذ", actions: [view("جدول الأعمال تحت التنفيذ"), act("estimate", "تقدير التكلفة الكلية للعقد"),
       act("close", "الإقفال الشهري", { hint: "يرحّل أصل/التزام العقد ومخصص العقود المثقلة", sensitive: true }),
       act("settings", "سياسة قياس الإنجاز", { hint: "المخرجات (المعتمد) أو المدخلات (التكلفة)", sensitive: true })] },
@@ -277,10 +279,10 @@ const PRODUCTION = {
 
 /** Contracting pages (after the first version): the manager runs projects; the accountant invoices and guarantees. */
 const CONTRACTING = {
-  manager: PERMISSIONS.filter((p) => ["projects.", "contracts.", "boq.", "guarantees.", "ipcs.", "variations.", "claims.", "subcontractors.", "retention.view", "revenue.view", "revenue.estimate", "tenders.", "site_stores.", "equipment.", "machines.", "maintenance.", "labor.view", "labor.record"].some((x) => p.startsWith(x))
+  manager: PERMISSIONS.filter((p) => ["projects.", "contracts.", "boq.", "guarantees.", "ipcs.", "variations.", "claims.", "subcontractors.", "retention.view", "revenue.view", "revenue.estimate", "tenders.", "site_stores.", "equipment.", "machines.", "maintenance.", "labor.view", "labor.record", "cost_control."].some((x) => p.startsWith(x))
     && !["ipcs.invoice", "contracts.activate", "ipcs.approve", "claims.agree"].includes(p)),
   accountant: ["projects.view", "contracts.view", "boq.view", "guarantees.view", "guarantees.create", "guarantees.edit", "ipcs.view", "ipcs.invoice", "variations.view", "claims.view",
-    "subcontractors.view", "retention.view", "retention.release", "revenue.view", "revenue.estimate", "revenue.close", "revenue.settings", "tenders.view", "site_stores.view", "equipment.view", "labor.view", "labor.allocate"] as Permission[],
+    "subcontractors.view", "retention.view", "retention.release", "revenue.view", "revenue.estimate", "revenue.close", "revenue.settings", "tenders.view", "site_stores.view", "equipment.view", "labor.view", "labor.allocate", "cost_control.view", "cost_control.budget", "cost_control.snapshot"] as Permission[],
   // The site storekeeper: projects to issue to, the site stores, equipment days and labour hours.
   inventory_clerk: ["projects.view", "site_stores.view", "site_stores.issue", "equipment.view", "equipment.create", "labor.view", "labor.record", "machines.view", "maintenance.view"] as Permission[],
 };

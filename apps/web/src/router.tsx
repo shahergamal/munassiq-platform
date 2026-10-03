@@ -28,6 +28,7 @@ import { ContractRevenuePage } from "./routes/workspace/ContractRevenue";
 import { TenderPage, TendersPage } from "./routes/workspace/Tenders";
 import { SiteMaterialsPage } from "./routes/workspace/SiteMaterials";
 import { ProjectLaborPage } from "./routes/workspace/ProjectLabor";
+import { ProjectControlPage } from "./routes/workspace/ProjectControl";
 import { AdminRegulatory } from "./routes/admin/AdminRegulatory";
 import { AttendancePage, EmployeePage, EmployeesPage, LeavesPage, PayrollPage, PayrollRunPage } from "./routes/workspace/Hr";
 import { OeeReport, PayrollReport, ProductionReport } from "./routes/workspace/OpsReports";
@@ -182,6 +183,7 @@ const tree = root.addChildren([
       w("/manufacturing/schedule", "mrp.view", ProductionSchedulePage),
       w("/contracting/projects", "projects.view", ProjectsPage),
       w("/contracting/projects/$projectId", "projects.view", ProjectPage),
+      w("/contracting/projects/$projectId/control", "cost_control.view", ProjectControlPage),
       w("/contracting/contracts/$contractId", "contracts.view", ContractPage),
       w("/contracting/ipcs/$ipcId", "ipcs.view", IpcPage),
       w("/contracting/subcontractors", "subcontractors.view", SubcontractorsPage),
