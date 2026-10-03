@@ -1,6 +1,7 @@
-// For the end-to-end tests (apps/web/e2e): a fresh verified user with a live session and a factory workspace,
+// For the end-to-end tests (apps/web/e2e): a fresh verified user with a live session, a factory workspace and a
+// contracting workspace,
 // created directly in the database the way the integration tests do, so no password is ever typed or stored.
-// Prints JSON { token, tenantId, email } on stdout. Local and CI databases only (refuses in production).
+// Prints JSON { token, csrf, tenantId, contractingTenantId, email } on stdout. Local and CI databases only (refuses in production).
 //
 //   node --env-file=.env src/scripts/e2e-session.ts [--api http://localhost:4000]
 
@@ -24,9 +25,13 @@ const s = (await systemPool.query<{ id: string }>(
 const csrf = csrfTokenFor(s.id, config.SESSION_SECRET);
 // A 15-digit VAT number (3…3), unique enough for a test database.
 const taxId = `3${String(randomInt(1e12)).padStart(12, "0")}03`;
-const r = await fetch(`${base}/tenants`, { method: "POST", headers: { "content-type": "application/json", cookie: `mn_sid=${token}`, "x-csrf-token": csrf, origin: config.APP_URL },
-  body: JSON.stringify({ companyName: "مصنع الاختبار الآلي", sector: "manufacturing", taxId, city: "الرياض" }) });
-if (r.status !== 201) throw new Error(`create workspace: ${r.status} ${await r.text()}`);
-const { id: tenantId } = (await r.json()) as { id: string };
-process.stdout.write(JSON.stringify({ token, tenantId, email }));
+const workspace = async (companyName: string, sector: string, vat: string) => {
+  const r = await fetch(`${base}/tenants`, { method: "POST", headers: { "content-type": "application/json", cookie: `mn_sid=${token}`, "x-csrf-token": csrf, origin: config.APP_URL },
+    body: JSON.stringify({ companyName, sector, taxId: vat, city: "الرياض" }) });
+  if (r.status !== 201) throw new Error(`create workspace: ${r.status} ${await r.text()}`);
+  return ((await r.json()) as { id: string }).id;
+};
+const tenantId = await workspace("مصنع الاختبار الآلي", "manufacturing", taxId);
+const contractingTenantId = await workspace("مقاولات الاختبار الآلي", "contracting", `3${String(randomInt(1e12)).padStart(12, "0")}03`);
+process.stdout.write(JSON.stringify({ token, csrf, tenantId, contractingTenantId, email }));
 await closePools();

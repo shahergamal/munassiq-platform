@@ -3,6 +3,7 @@
 // people open most, for D seconds, and reports throughput, latency percentiles and errors per endpoint.
 //
 //   npm run load:test [-- --email factory.demo@munassiq.local --api http://localhost:4000 --clients 20 --seconds 30]
+//   npm run load:test -- --email contracting.demo@munassiq.local   (the contracting screens: portfolio, EVM, cost control, sites…)
 //
 // Reads only: it never writes, so it is safe on a staging copy. The rate limit on login is not exercised.
 
@@ -25,10 +26,23 @@ const tenant = ((await login.json()) as { tenants: { id: string }[] }).tenants[0
 if (!tenant) throw new Error("the account has no workspace");
 const tenantId: string = tenant;
 
-const ENDPOINTS = [
+const get = async (path: string) => (await (await fetch(base + path, { headers: { cookie, "x-tenant-id": tenantId } })).json()) as Record<string, unknown>;
+const ENDPOINTS = email.startsWith("contracting") ? await contractingEndpoints() : [
   "/t/context", "/t/ingredients?pageSize=25", "/t/stock?pageSize=25", "/t/purchases?pageSize=25", "/t/sales-orders?pageSize=25",
   "/t/manufacturing-orders?pageSize=25", "/t/accounting/trial-balance", "/t/reports/production", "/t/reports/oee", "/t/employees",
 ];
+
+/** The contracting screens people open most, on the demo's projects (npm run demo:contracting). */
+async function contractingEndpoints() {
+  const projects = (await get("/t/projects")).items as { id: string; code: string }[];
+  const tower = projects.find((p) => p.code === "PRJ-TWR")?.id;
+  const rollout = projects.find((p) => p.code === "PRJ-5G")?.id;
+  if (!tower || !rollout) throw new Error("the contracting demo projects are missing (run npm run demo:contracting first)");
+  const last = new Date(); last.setUTCDate(0);
+  return ["/t/context", "/t/projects", "/t/contracting/dashboard", "/t/contracting/portfolio", `/t/contracting/wip?period=${last.toISOString().slice(0, 7)}`,
+    "/t/contracting/retention", "/t/contracting/handovers", `/t/projects/${tower}`, `/t/projects/${tower}/evm`, `/t/projects/${tower}/cost-control`,
+    `/t/projects/${tower}/schedule`, `/t/inspections?projectId=${tower}`, `/t/daily-reports?projectId=${tower}`, `/t/projects/${rollout}/sites`];
+}
 const stats = new Map<string, { n: number; errors: number; ms: number[] }>(ENDPOINTS.map((e) => [e, { n: 0, errors: 0, ms: [] }]));
 const until = Date.now() + seconds * 1000;
 let i = 0;
