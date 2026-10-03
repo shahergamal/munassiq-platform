@@ -19,6 +19,12 @@ export const systemPool = new pg.Pool({
   idle_in_transaction_session_timeout: 30_000,
 });
 
+// An idle connection dropped by the server (restart, failover, network) is an 'error' event on the pool; without a
+// listener Node treats it as unhandled and the whole process exits. The pool discards that client and opens a new one.
+for (const [name, pool] of [["app", appPool], ["system", systemPool]] as const) {
+  pool.on("error", (err) => console.error(`[db] idle ${name} connection lost: ${err.message}`));
+}
+
 async function run<T>(pool: pg.Pool, fn: (db: Db) => Promise<T>, begin: string, setup?: (db: Db) => Promise<void>): Promise<T> {
   const db = await pool.connect();
   try {

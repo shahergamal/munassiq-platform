@@ -115,6 +115,13 @@ export const CATALOG = [
     { key: "labor", sectors: CON, label: "العمالة على المشاريع", actions: [view("الساعات والتحميل"), act("record", "تسجيل ساعات العمالة على المشاريع"),
       act("allocate", "تحميل مسير الرواتب على المشاريع", { hint: "بالإجماليات لكل مشروع؛ رواتب الأفراد تبقى مختومة", sensitive: true })] },
     { key: "equipment", sectors: CON, label: "المعدات على المشاريع", actions: [view("والاستغلال"), create("ساعات التشغيل اليومية"), edit("الملكية والسعر الداخلي")] },
+    { key: "quality", sectors: CON, label: "الجودة: الفحص وعدم المطابقة والاستفسارات", actions: [view("طلبات الفحص وتقارير عدم المطابقة والاستفسارات"),
+      act("plan", "خطة الفحص والاختبار ITP"), act("record", "طلب فحص، فتح تقرير عدم مطابقة، استفسار فني"),
+      act("respond", "تسجيل نتيجة الاستشاري والرد على الاستفسار"), act("close", "إغلاق تقرير عدم المطابقة", { hint: "بعد المعالجة والإجراء التصحيحي" })] },
+    { key: "hse", sectors: CON, label: "السلامة والصحة المهنية", actions: [view("الحوادث والتصاريح والمؤشرات"), act("record", "تسجيل الحوادث والتحقيق فيها"), act("permits", "تصاريح العمل")] },
+    { key: "documents", sectors: CON, label: "ضبط الوثائق", actions: [view("السجل والإصدارات والملفات"), act("upload", "تسجيل الوثائق ورفع الإصدارات"),
+      act("review", "تسجيل مراجعة الاستشاري (A–D)"), act("transmit", "خطابات الإرسال")] },
+    { key: "daily_reports", sectors: CON, label: "التقارير اليومية للموقع", actions: [view(), act("write", "كتابة التقرير اليومي"), act("submit", "تقديم التقرير", { hint: "يصبح نهائياً لا يُعدَّل" })] },
     { key: "retention", sectors: CON, label: "المحتجزات", actions: [view("وأعمارها"), act("release", "تسجيل الإفراج", { hint: "قبض محتجز العميل أو استحقاق محتجز مقاول الباطن", sensitive: true })] },
   ] },
   { key: "hr", label: "الموارد البشرية", pages: [
@@ -279,12 +286,12 @@ const PRODUCTION = {
 
 /** Contracting pages (after the first version): the manager runs projects; the accountant invoices and guarantees. */
 const CONTRACTING = {
-  manager: PERMISSIONS.filter((p) => ["projects.", "contracts.", "boq.", "guarantees.", "ipcs.", "variations.", "claims.", "subcontractors.", "retention.view", "revenue.view", "revenue.estimate", "tenders.", "site_stores.", "equipment.", "machines.", "maintenance.", "labor.view", "labor.record", "cost_control."].some((x) => p.startsWith(x))
+  manager: PERMISSIONS.filter((p) => ["projects.", "contracts.", "boq.", "guarantees.", "ipcs.", "variations.", "claims.", "subcontractors.", "retention.view", "revenue.view", "revenue.estimate", "tenders.", "site_stores.", "equipment.", "machines.", "maintenance.", "labor.view", "labor.record", "cost_control.", "quality.", "hse.", "documents.", "daily_reports."].some((x) => p.startsWith(x))
     && !["ipcs.invoice", "contracts.activate", "ipcs.approve", "claims.agree"].includes(p)),
   accountant: ["projects.view", "contracts.view", "boq.view", "guarantees.view", "guarantees.create", "guarantees.edit", "ipcs.view", "ipcs.invoice", "variations.view", "claims.view",
-    "subcontractors.view", "retention.view", "retention.release", "revenue.view", "revenue.estimate", "revenue.close", "revenue.settings", "tenders.view", "site_stores.view", "equipment.view", "labor.view", "labor.allocate", "cost_control.view", "cost_control.budget", "cost_control.snapshot"] as Permission[],
+    "subcontractors.view", "retention.view", "retention.release", "revenue.view", "revenue.estimate", "revenue.close", "revenue.settings", "tenders.view", "site_stores.view", "equipment.view", "labor.view", "labor.allocate", "cost_control.view", "cost_control.budget", "cost_control.snapshot", "quality.view", "hse.view", "daily_reports.view"] as Permission[],
   // The site storekeeper: projects to issue to, the site stores, equipment days and labour hours.
-  inventory_clerk: ["projects.view", "site_stores.view", "site_stores.issue", "equipment.view", "equipment.create", "labor.view", "labor.record", "machines.view", "maintenance.view"] as Permission[],
+  inventory_clerk: ["projects.view", "quality.view", "quality.record", "documents.view", "daily_reports.view", "daily_reports.write", "site_stores.view", "site_stores.issue", "equipment.view", "equipment.create", "labor.view", "labor.record", "machines.view", "maintenance.view"] as Permission[],
 };
 
 /** HR pages (every sector): the manager runs attendance and leaves; pay stays with the owner (and custom roles). */

@@ -61,6 +61,7 @@ const existing = (await call<{ items: { id: string; code: string }[] }>("GET", "
 if (existing.some((p) => p.code === "PRJ-RD7")) {
   await subcontracting();
   await control();
+  await site();
   console.log(`ready (data already present): ${email} — password in apps/api/.demo-accounts.local`);
   process.exit(0);
 }
@@ -151,6 +152,7 @@ const gov = (await call("POST", "/t/contracts", { projectId: road, number: "AMN-
 void gov;
 await subcontracting();
 await control();
+await site();
 
 console.log(`ready: ${email} — password in apps/api/.demo-accounts.local`);
 
@@ -214,4 +216,42 @@ async function control() {
   const budget: Record<string, number> = { MAT: 1_500_000, LAB: 800_000, EQP: 300_000, SUB: 1_500_000, OVH: 250_000 };
   await call("PUT", `/t/projects/${towerId}/budget`, { lines: codes.filter((c) => budget[c.code]).map((c) => ({ costCodeId: c.id, amount: budget[c.code] })) });
   for (const back of [2, 1]) await call("POST", `/t/projects/${towerId}/evm/snapshot`, { period: m(-back) }).catch(() => undefined);
+}
+
+/** C10: the tower's site records: an ITP, inspections (one rejected with its NCR and re-inspection), an RFI, daily reports, safety and a reviewed drawing. */
+async function site() {
+  const towerId = (await call<{ items: { id: string; code: string }[] }>("GET", "/t/projects")).items.find((p) => p.code === "PRJ-TWR")!.id;
+  if ((await call<{ items: unknown[] }>("GET", `/t/projects/${towerId}/itp`)).items.length) return;
+  const sub = (await call<{ items: { id: string; name: string }[] }>("GET", "/t/suppliers?pageSize=100")).items.find((s) => s.name.includes("الإتقان"))?.id ?? null;
+  const hold = (await call("POST", `/t/projects/${towerId}/itp`, { activity: "حديد التسليح قبل الصب", point: "H", reference: "SBC 304", criteria: "الأقطار والتباعد والغطاء حسب المخطط", frequency: "كل صبة" })).id;
+  await call("POST", `/t/projects/${towerId}/itp`, { activity: "اختبار مكعبات الخرسانة", point: "W", reference: "SASO", criteria: "مقاومة 28 يوماً ≥ المطلوبة", frequency: "كل 50 م³" });
+  await call("POST", `/t/projects/${towerId}/itp`, { activity: "اعتماد عينات البلوك", point: "R", frequency: "لكل مورد" });
+  const w1 = await call("POST", "/t/inspections", { projectId: towerId, kind: "WIR", itpItemId: hold, location: "الدور الرابع", description: "تسليح سقف الدور الرابع", requestedFor: addDays(-6) });
+  await call("POST", `/t/inspections/${w1.id}/result`, { status: "rejected", inspector: "م. خالد العتيبي", inspectedOn: addDays(-6), comments: "غطاء خرساني ناقص عند الكمرات الطرفية", raiseNcr: { severity: "minor" } });
+  const w2 = await call("POST", "/t/inspections", { projectId: towerId, kind: "WIR", itpItemId: hold, location: "الدور الرابع", description: "إعادة فحص تسليح سقف الدور الرابع", requestedFor: addDays(-5), reinspectionOf: w1.id });
+  await call("POST", `/t/inspections/${w2.id}/result`, { status: "approved", inspector: "م. خالد العتيبي", inspectedOn: addDays(-5) });
+  await call("POST", "/t/inspections", { projectId: towerId, kind: "WIR", itpItemId: hold, location: "الدور الخامس", description: "تسليح أعمدة الدور الخامس", requestedFor: addDays(1) });
+  const rfi = (await call("POST", "/t/rfis", { projectId: towerId, subject: "منسوب بلاطة المدخل", question: "المخطط المعماري A-101 يبين منسوب +0.45 والإنشائي S-201 يبين +0.30", discipline: "structural", requiredBy: addDays(-2) })).id;
+  await call("POST", `/t/rfis/${rfi}/answer`, { answer: "يُعتمد +0.45 ويُعدَّل الإنشائي", answeredOn: addDays(-1), impact: "none" });
+  await call("POST", "/t/rfis", { projectId: towerId, subject: "تفصيلة عزل السطح", question: "لا تفصيلة لعزل الحواف عند الدراوي", discipline: "architectural", requiredBy: addDays(3) });
+  for (const back of [5, 4, 3, 2, 1]) {
+    const date = addDays(-back);
+    const r = (await call("PUT", `/t/projects/${towerId}/daily-reports/${date}`, { weather: back === 3 ? "dust" : "hot", temperature: 41 + (back % 3), workDone: "أعمال الهيكل الخرساني للدور الرابع والخامس",
+      issues: back === 3 ? "توقف ساعتين بسبب الغبار" : null,
+      manpower: [{ trade: "نجارون", headcount: 35, hours: 10 }, { trade: "حدادون", headcount: 28, hours: 10 }, { trade: "كهربائيون", supplierId: sub, headcount: 12, hours: 9 }],
+      equipment: [{ description: "رافعة برجية", workingHours: back === 3 ? 6 : 9, idleHours: back === 3 ? 3 : 1 }, { description: "مضخة خرسانة", workingHours: 4, idleHours: 0 }] })).id;
+    await call("POST", `/t/daily-reports/${r}/submit`);
+  }
+  await call("POST", "/t/hse/incidents", { projectId: towerId, occurredAt: `${addDays(-4)}T10:15:00+03:00`, kind: "near_miss", description: "سقوط لوح نجارة من الدور الرابع في منطقة مطوقة", location: "الواجهة الشمالية",
+    immediateAction: "إيقاف العمل بالمنطقة وتثبيت الحواجز" });
+  await call("POST", "/t/work-permits", { projectId: towerId, kind: "hot_work", location: "السطح", description: "لحام قواعد خزانات المياه", precautions: "طفاية ومراقب حريق وإزالة المواد القابلة للاشتعال",
+    supplierId: sub, validFrom: new Date(Date.now() - 2 * 3_600_000).toISOString(), validTo: new Date(Date.now() + 8 * 3_600_000).toISOString() });
+  const doc = (await call("POST", `/t/projects/${towerId}/documents`, { number: "SD-STR-104", title: "تفاصيل تسليح سقف الدور الرابع", docType: "shop_drawing", discipline: "structural" })).id;
+  const fd = new FormData();
+  fd.append("file", new Blob(["%PDF-1.4" + String.fromCharCode(10) + "% demo shop drawing" + String.fromCharCode(10) + "%%EOF"], { type: "application/pdf" }), "SD-STR-104-A.pdf");
+  const up = await fetch(`${base}/t/documents/${doc}/revisions`, { method: "POST", headers: { cookie, "x-csrf-token": csrf, "x-tenant-id": tenantId }, body: fd });
+  if (!up.ok) throw new Error(`revision upload → ${up.status} ${await up.text()}`);
+  const rev = (await up.json()) as { id: string };
+  await call("POST", `/t/document-revisions/${rev.id}/review`, { code: "B", reviewedOn: addDays(0), reviewer: "م. سارة القحطاني", comments: "تعديل التباعد عند الأعمدة الطرفية" });
+  await call("POST", `/t/projects/${towerId}/transmittals`, { recipient: "فريق الموقع", purpose: "for_construction", sentOn: addDays(0), revisionIds: [rev.id] });
 }

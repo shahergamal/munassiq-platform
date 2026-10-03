@@ -205,3 +205,16 @@ test("programme import: P6 XER (WBS as parents) and MS Project XML (outline as p
   assert.deepEqual(m.map((a) => [a.code, a.name, a.parentCode, a.isSummary, a.pctComplete]), [["1", "الأساسات", null, true, 0], ["1.1", "صب & معالجة", "1", false, 25]]);
   assert.throws(() => parseXer("nothing"), /xer_no_tasks/);
 });
+
+import { daysLate, nextRevision, safetyRates, sniffMime } from "../src/lib/contracting/siteQuality.ts";
+test("site: safety rates per man-hours, file types by their bytes, revision codes", () => {
+  assert.deepEqual(safetyRates({ manhours: 500_000, lostTime: 1, recordable: 3 }), { ltifr: 2, trir: 1.2 });
+  assert.deepEqual(safetyRates({ manhours: 0, lostTime: 1, recordable: 1 }), { ltifr: null, trir: null });
+  assert.equal(sniffMime(new TextEncoder().encode("%PDF-1.7\n")), "application/pdf");
+  assert.equal(sniffMime(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0])), "image/png");
+  assert.equal(sniffMime(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])), "image/jpeg");
+  assert.equal(sniffMime(new TextEncoder().encode("AC1032\0\0")), "image/vnd.dwg");
+  assert.equal(sniffMime(new TextEncoder().encode("MZ\x90\0 not a drawing")), null);
+  assert.deepEqual([nextRevision(null), nextRevision("A"), nextRevision("Z"), nextRevision("AZ"), nextRevision("0"), nextRevision("9")], ["A", "B", "AA", "BA", "1", "10"]);
+  assert.deepEqual([daysLate("2026-01-01", "2026-01-11"), daysLate("2026-01-20", "2026-01-11"), daysLate(null, "2026-01-11")], [10, 0, 0]);
+});
